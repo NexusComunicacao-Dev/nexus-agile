@@ -14,7 +14,7 @@ type Story = {
   tags?: string[];
   createdAt: string;
   status: Status;
-  history?: { status: Status; at: string }[]; // <— timeline de status
+  history?: { status: Status; at: string }[]; // status timeline
 };
 
 type Sprint = {
@@ -39,16 +39,16 @@ export default function SprintsPage() {
   const [storyModalTarget, setStoryModalTarget] = useState<null | "backlog" | "sprint">(null);
   const [sprintModalOpen, setSprintModalOpen] = useState(false);
 
-  // persistência local
+  // local persistence
   const LS_BACKLOG = "wm_backlog_v1";
   const LS_ACTIVE_SPRINT = "wm_active_sprint_v1";
   const LS_HISTORY = "wm_sprint_history_v1";
-  const LS_POKER_STORY = "wm_poker_story_v1"; // <— história selecionada para poker
+  const LS_POKER_STORY = "wm_poker_story_v1"; // selected story for poker
 
-  // NEW: controla hidratação para não sobrescrever storage antes de carregar
+  // NEW: control hydration to avoid overwriting storage before initial load
   const [hydrated, setHydrated] = useState(false);
 
-  // carregar do localStorage
+  // load from localStorage
   useEffect(() => {
     try {
       const b = localStorage.getItem(LS_BACKLOG);
@@ -64,7 +64,7 @@ export default function SprintsPage() {
     }
   }, []);
 
-  // salvar no localStorage (apenas após hidratar) — dedupe histórico na gravação
+  // save to localStorage (only after hydration) — dedupe history on write
   useEffect(() => {
     if (!hydrated) return;
     try {
@@ -88,7 +88,7 @@ export default function SprintsPage() {
     }
     if (target === "sprint") {
       const now = new Date().toISOString();
-      const story: Story = { ...base, history: [{ status: "todo", at: now }] }; // <—
+      const story: Story = { ...base, history: [{ status: "todo", at: now }] }; // initial status event
       setActiveSprint((s) =>
         s ? { ...s, stories: [story, ...dedupeById(s.stories.filter((x) => x.id !== story.id))] } : s
       );
@@ -108,7 +108,7 @@ export default function SprintsPage() {
         const withHistory: Story = {
           ...story,
           status: "todo",
-          history: story.history?.length ? story.history : [{ status: "todo", at: now }], // <—
+          history: story.history?.length ? story.history : [{ status: "todo", at: now }], // initialize status history if missing
         };
         return { ...spr, stories: [withHistory, ...cleaned] };
       });
@@ -120,7 +120,7 @@ export default function SprintsPage() {
     setActiveSprint((spr) => {
       if (!spr) return spr;
       const story = spr.stories.find((s) => s.id === id);
-      const remaining = spr.stories.filter((s) => s.id !== id); // remove duplicatas
+      const remaining = spr.stories.filter((s) => s.id !== id); // remove duplicates (by id)
       if (story) {
         setBacklog((b) => {
           const cleaned = b.filter((x) => x.id !== id);
@@ -142,7 +142,7 @@ export default function SprintsPage() {
               const now = new Date().toISOString();
               const hist = (s.history ?? []).slice();
               const last = hist[hist.length - 1];
-              if (!last || last.status !== status) hist.push({ status, at: now }); // <—
+              if (!last || last.status !== status) hist.push({ status, at: now }); // append status change to history
               return { ...s, status, history: hist };
             }),
           }
@@ -187,7 +187,7 @@ export default function SprintsPage() {
     });
   }
 
-  // NEW: enviar história ao Planning Poker
+  // NEW: send story to Planning Poker
   function goToPoker(story: Story) {
     try {
       localStorage.setItem(LS_POKER_STORY, JSON.stringify(story));
@@ -402,7 +402,7 @@ export default function SprintsPage() {
             <li key={s.id} className="rounded-md border border-foreground/10 bg-background p-3 animate-slide-up transition-base">
               <div className="flex items-center justify-between">
                 <div>
-                  <a href={`/sprints/${s.id}`} className="text-sm font-medium hover:underline">{s.name}</a> {/* <— link */}
+                  <a href={`/sprints/${s.id}`} className="text-sm font-medium hover:underline">{s.name}</a> {/* link to details */}
                   <div className="text-xs text-foreground/60">
                     {fmtDate(s.startDate)} → {fmtDate(s.completedAt || s.endDate || s.startDate)} • concluídas: {s.stories.length}
                   </div>
@@ -746,7 +746,7 @@ function sampleStory(title: string, opts?: Partial<Story>) {
   return { ...base, ...opts };
 }
 
-// NEW: sanitizadores e dedupe
+// NEW: sanitizers and dedupe
 function dedupeById<T extends { id: string }>(arr: T[]): T[] {
   const seen = new Set<string>();
   const out: T[] = [];
@@ -766,7 +766,7 @@ function sanitizeSprint(s: Sprint | null | undefined): Sprint | null {
   return { ...s, stories: sanitizeStories(s.stories) };
 }
 
-// Normaliza histórico (remove nulos, dedupe e sanitiza stories)
+// Normalize history (remove nulls, dedupe and sanitize stories)
 function sanitizeHistory(sprints: Sprint[] | null | undefined): Sprint[] {
   if (!Array.isArray(sprints)) return [];
   const cleaned = sprints

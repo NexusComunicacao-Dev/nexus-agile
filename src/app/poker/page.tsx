@@ -6,7 +6,7 @@ const deck = ["0", "1", "2", "3", "5", "8", "13", "21", "34", "?", "☕"];
 
 type Vote = { user: string; value?: string };
 
-// Tipos mínimos para integrar com sprint/backlog
+// Minimal types to integrate with sprint/backlog
 type Status = "todo" | "doing" | "done";
 type Story = {
   id: string;
@@ -43,7 +43,7 @@ export default function PokerPage() {
   const [name, setName] = useState("");
   const [revealed, setRevealed] = useState(false);
 
-  // História selecionada para votação
+  // Selected story for voting
   const [story, setStory] = useState<Story | null>(null);
   const [applyLoading, setApplyLoading] = useState(false);
 
@@ -85,6 +85,7 @@ export default function PokerPage() {
     setRevealed(false);
   }
 
+  // group counts
   const summary = useMemo(() => {
     if (!revealed) return null;
     const chosen = Object.values(votes)
@@ -97,7 +98,7 @@ export default function PokerPage() {
     return entries;
   }, [votes, revealed]);
 
-  // Pega a melhor estimativa numérica (mais votada; ignora ? e ☕)
+  // Get best numeric estimate (most voted; ignores ? and ☕)
   const bestNumeric = useMemo(() => {
     if (!summary) return null;
     for (const [k] of summary) {
@@ -110,14 +111,14 @@ export default function PokerPage() {
     if (!story || bestNumeric == null) return;
     setApplyLoading(true);
     try {
-      // Atualiza no backlog
+      // Update in backlog
       const braw = localStorage.getItem(LS_BACKLOG);
       if (braw) {
         const b = JSON.parse(braw) as Story[];
         const updated = b.map((s) => (s.id === story.id ? { ...s, points: bestNumeric } : s));
         localStorage.setItem(LS_BACKLOG, JSON.stringify(updated));
       }
-      // Atualiza na sprint ativa
+      // Update in active sprint
       const araw = localStorage.getItem(LS_ACTIVE_SPRINT);
       if (araw) {
         const s = JSON.parse(araw) as Sprint | null;
@@ -129,10 +130,10 @@ export default function PokerPage() {
           localStorage.setItem(LS_ACTIVE_SPRINT, JSON.stringify(next));
         }
       }
-      // Atualiza o objeto em memória e limpa seleção
+      // Update local object and clear selection
       setStory((prev) => (prev ? { ...prev, points: bestNumeric } : prev));
       localStorage.removeItem(LS_POKER_STORY);
-      // Redireciona para sprints (garante ver atualização)
+      // Redirect to /sprints (ensures UI updates)
       window.location.href = "/sprints";
     } finally {
       setApplyLoading(false);

@@ -46,7 +46,7 @@ export default function BoardPage() {
   const [dropTarget, setDropTarget] = useState<Status | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // carregar sprint ativa
+  // load active sprint
   useEffect(() => {
     try {
       const a = localStorage.getItem(LS_ACTIVE_SPRINT);
@@ -56,7 +56,7 @@ export default function BoardPage() {
     }
   }, []);
 
-  // NEW: escuta alterações vindas de outras páginas/abas
+  // NEW: listen to changes from other pages/tabs
   useEffect(() => {
     function onStorage(e: StorageEvent) {
       if (e.key === LS_ACTIVE_SPRINT) {
@@ -71,7 +71,7 @@ export default function BoardPage() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // salvar sprint ativa
+  // persist active sprint
   function persist(next: Sprint | null) {
     setSprint(next);
     try {
@@ -101,7 +101,7 @@ export default function BoardPage() {
       priority: "medium",
       tags: [],
       points: undefined,
-      history: [{ status: "todo", at: now }], // <—
+      history: [{ status: "todo", at: now }], // initial status event
     };
     const next: Sprint = { ...sprint, stories: [story, ...sprint.stories] };
     setTitle("");
@@ -115,7 +115,7 @@ export default function BoardPage() {
       const next: Sprint = { ...sprint, stories: sprint.stories.filter((x) => x.id !== id) };
       setDeletingId(null);
       persist(next);
-    }, 150); // combina com .animate-fade-out
+    }, 150); // matches .animate-fade-out timing
   }
 
   function moveStory(id: string, to: Status) {
@@ -128,7 +128,7 @@ export default function BoardPage() {
         if (s.status === to) return s;
         const hist = (s.history ?? []).slice();
         const last = hist[hist.length - 1];
-        if (!last || last.status !== to) hist.push({ status: to, at: now }); // <—
+        if (!last || last.status !== to) hist.push({ status: to, at: now }); // append status change to history
         return { ...s, status: to, history: hist };
       }),
     };
@@ -246,7 +246,7 @@ export default function BoardPage() {
                       ))}
                     </div>
                   </div>
-                  {/* Botões removidos (remoção só na gestão de sprint) */}
+                  {/* Buttons removed (removal only in Sprint management) */}
                 </article>
               ))}
               {grouped[status].length === 0 && (
