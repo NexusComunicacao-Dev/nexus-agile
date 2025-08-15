@@ -8,7 +8,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-comfortaa);
   --font-mono: var(--font-geist-mono);
 }
 
@@ -22,5 +22,31 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-comfortaa), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  transition: color 200ms ease, background-color 200ms ease;
 }
+
+/* --- animações utilitárias --- */
+@keyframes pop-in {
+  0% { transform: scale(0.97); opacity: 0 }
+  100% { transform: scale(1); opacity: 1 }
+}
+@keyframes fade-in {
+  0% { opacity: 0 }
+  100% { opacity: 1 }
+}
+@keyframes fade-out {
+  0% { opacity: 1 }
+  100% { opacity: 0 }
+}
+@keyframes slide-up {
+  0% { transform: translateY(6px); opacity: 0 }
+  100% { transform: translateY(0); opacity: 1 }
+}
+
+.animate-pop { animation: pop-in 180ms cubic-bezier(.2,.8,.2,1) both; }
+.animate-fade-in { animation: fade-in 180ms ease-out both; }
+.animate-fade-out { animation: fade-out 150ms ease-in both; }
+.animate-slide-up { animation: slide-up 200ms cubic-bezier(.2,.8,.2,1) both; }
+
+.transition-base { transition: all 200ms cubic-bezier(.2,.8,.2,1); }

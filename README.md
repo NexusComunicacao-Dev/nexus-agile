@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Work Manager (esqueleto)
 
-## Getting Started
+- Next.js (App Router) + Tailwind.
+- Páginas: `/board` (Kanban mock) e `/poker` (Planning Poker mock).
+- Objetivo: validar UX e escopo. Depois: DB, Auth, Realtime, RBAC e Sprints.
 
-First, run the development server:
+## Funcionalidades atuais
+
+- Kanban básico (DnD).
+- Planning Poker (mock).
+- Sprints:
+  - Backlog com criação de histórias (título, descrição, responsáveis, prioridade, pontos, tags).
+  - Iniciar/Finalizar sprint.
+  - Adicionar/remover histórias entre backlog e sprint.
+  - Histórico de sprints finalizadas.
+
+Rotas:
+
+- `/board`, `/poker`, `/sprints`.
+
+## Rodar local
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
 pnpm dev
-# or
-bun dev
+# ou npm/yarn/bun
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abra http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Hospedagem na Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- App + APIs serverless: Vercel (Edge/Node).
+- Banco: Postgres gerenciado (Vercel Postgres/Neon/Supabase) com TLS.
+- Segredos: variáveis de ambiente por ambiente (Development/Preview/Production).
 
-## Learn More
+## Segurança (resumo)
 
-To learn more about Next.js, take a look at the following resources:
+- Sessão em cookie HttpOnly + SameSite.
+- Nada de chaves no cliente; use rotas/ações no servidor.
+- Banco com usuários por ambiente, roles mínimas, backups, RLS (quando aplicável).
+- Auditoria (tabela events) e logs estruturados.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Próximos passos (reais)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. ORM e DB
+   - `npm i prisma @prisma/client` e configurar Postgres.
+   - Modelos: users, orgs, projects, sprints, issues, votes, events (audit).
+   - Migrações + seed.
+2. Auth
+   - `npm i next-auth` (Auth.js). Providers (OAuth/Email).
+   - Proteção de rotas e RBAC (owner/admin/member).
+3. Tempo real
+   - Planning Poker e Kanban com Vercel Realtime/Ably/Pusher.
+4. Sprints e relatórios
+   - Backlog, planejamento, histórico, métricas (throughput, lead time, burn-down).
