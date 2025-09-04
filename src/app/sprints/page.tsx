@@ -39,42 +39,60 @@ export default function SprintsPage() {
   const [storyModalTarget, setStoryModalTarget] = useState<null | "backlog" | "sprint">(null);
   const [sprintModalOpen, setSprintModalOpen] = useState(false);
 
-  // local persistence
-  const LS_BACKLOG = "wm_backlog_v1";
-  const LS_ACTIVE_SPRINT = "wm_active_sprint_v1";
-  const LS_HISTORY = "wm_sprint_history_v1";
+  // Selected project (required)
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const pid = localStorage.getItem("wm_selected_project_v1");
+      const pname = localStorage.getItem("wm_selected_project_name");
+      setProjectId(pid);
+      setProjectName(pname);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // local persistence (scoped by project)
+  const LS_BACKLOG = projectId ? `wm_${projectId}_backlog_v1` : "wm_backlog_v1";
+  const LS_ACTIVE_SPRINT = projectId ? `wm_${projectId}_active_sprint_v1` : "wm_active_sprint_v1";
+  const LS_HISTORY = projectId ? `wm_${projectId}_sprint_history_v1` : "wm_sprint_history_v1";
   const LS_POKER_STORY = "wm_poker_story_v1"; // selected story for poker
 
-  // NEW: control hydration to avoid overwriting storage before initial load
+  // control hydration to avoid overwriting storage before initial load
   const [hydrated, setHydrated] = useState(false);
 
-  // load from localStorage
+  // load from localStorage (when projectId changes)
   useEffect(() => {
+    if (!projectId) return;
     try {
       const b = localStorage.getItem(LS_BACKLOG);
       const a = localStorage.getItem(LS_ACTIVE_SPRINT);
       const h = localStorage.getItem(LS_HISTORY);
       if (b) setBacklog(sanitizeStories(JSON.parse(b)));
       if (a) setActiveSprint(sanitizeSprint(JSON.parse(a)));
-      if (h) setHistory(sanitizeHistory(JSON.parse(h) as Sprint[])); // <— dedupe e sanitiza histórico
+      if (h) setHistory(sanitizeHistory(JSON.parse(h) as Sprint[]));
     } catch {
       /* ignore */
     } finally {
       setHydrated(true);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
-  // save to localStorage (only after hydration) — dedupe history on write
+  // save to localStorage (only after hydration and with projectId)
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !projectId) return;
     try {
       localStorage.setItem(LS_BACKLOG, JSON.stringify(backlog));
       localStorage.setItem(LS_ACTIVE_SPRINT, JSON.stringify(activeSprint));
-      localStorage.setItem(LS_HISTORY, JSON.stringify(dedupeById(history))); // <—
+      localStorage.setItem(LS_HISTORY, JSON.stringify(dedupeById(history)));
     } catch {
       /* ignore */
     }
-  }, [hydrated, backlog, activeSprint, history]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, projectId, backlog, activeSprint, history]);
 
   const todoCount = useMemo(
     () => activeSprint?.stories.filter((s) => s.status !== "done").length ?? 0,
@@ -197,13 +215,33 @@ export default function SprintsPage() {
     }
   }
 
+  // Gate: require selected project
+  if (!projectId) {
+    return (
+      <section className="grid place-items-center gap-4 py-16">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold">Selecione um projeto</h2>
+          <p className="mt-1 text-sm text-foreground/60">
+            As sprints existem dentro de um projeto. Vá para “Projetos” e crie/abra um projeto.
+          </p>
+          <a
+            href="/projects"
+            className="mt-4 inline-block rounded-md bg-foreground px-4 py-2 text-background text-sm font-medium hover:opacity-90"
+          >
+            Ir para Projetos
+          </a>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="grid gap-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Sprints</h1>
+          <h1 className="text-2xl font-semibold">Sprints {projectName ? `• ${projectName}` : ""}</h1>
           <p className="text-xs text-foreground/60">
-            Gerencie backlog, inicie/finalize sprints e mova histórias entre backlog e sprint.
+            Gerencie backlog, inicie/finalize sprints e mova histórias entre backlog e sprint (escopo do projeto).
           </p>
         </div>
 

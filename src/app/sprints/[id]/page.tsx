@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 
 type Status = "todo" | "doing" | "done";
 type Story = {
@@ -25,25 +26,40 @@ type Sprint = {
   status: "active" | "completed";
   completedAt?: string;
 };
-
-const LS_HISTORY = "wm_sprint_history_v1";
+// remove LS_HISTORY constante fixa e use chave dinâmica por projeto
 const LEAD_TIME_DAYS_DEFAULT = 7;
 
-export default function SprintDetailsPage({ params }: { params: { id: string } }) {
-  const { id } = params;
+export default function SprintDetailsPage() {
+  const params = useParams();
+  const id = (params as any)?.id?.toString();
+
   const [sprint, setSprint] = useState<Sprint | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
 
   useEffect(() => {
     try {
-      const h = localStorage.getItem(LS_HISTORY);
-      if (!h) return;
-      const all = JSON.parse(h) as Sprint[];
+      const pid = localStorage.getItem("wm_selected_project_v1");
+      setProjectId(pid);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!id) return;
+    try {
+      const histKey = projectId
+        ? `wm_${projectId}_sprint_history_v1`
+        : "wm_sprint_history_v1";
+      const raw = localStorage.getItem(histKey);
+      if (!raw) return;
+      const all = JSON.parse(raw) as Sprint[];
       const s = all.find((x) => x.id === id) || null;
       setSprint(s || null);
     } catch {
       /* ignore */
     }
-  }, [id]);
+  }, [id, projectId]);
 
   const stories = useMemo(() => sprint?.stories ?? [], [sprint]);
 

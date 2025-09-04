@@ -40,6 +40,24 @@ Abra http://localhost:3000.
 - Banco com usuários por ambiente, roles mínimas, backups, RLS (quando aplicável).
 - Auditoria (tabela events) e logs estruturados.
 
+## Banco de dados (MongoDB Atlas) + Auth.js
+1) Crie um Cluster/DB no MongoDB Atlas e gere uma connection string (SRV).
+2) Variáveis de ambiente (Development/Production):
+```
+MONGODB_URI="mongodb+srv://<user>:<pass>@<cluster>/?retryWrites=true&w=majority&appName=<app>"
+MONGODB_DB="nexus_agile"
+AUTH_SECRET="<openssl rand -hex 32>"
+# Opcional (OAuth)
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
+```
+3) Auth.js
+- Usa MongoDBAdapter com o driver oficial.
+- Se GOOGLE_* estiver configurado, usa Google OAuth; senão, fallback Credentials (apenas dev).
+
+4) Proteção de rotas
+- Após validar o login, adicione middleware/guards conforme necessidade (ex.: bloquear /board e /sprints para anônimos).
+
 ## Próximos passos (reais)
 
 1. ORM e DB
@@ -53,3 +71,57 @@ Abra http://localhost:3000.
    - Planning Poker e Kanban com Vercel Realtime/Ably/Pusher.
 4. Sprints e relatórios
    - Backlog, planejamento, histórico, métricas (throughput, lead time, burn-down).
+5. Migrar Sprints/Stories do localStorage para coleções Mongo (organizations, users, projects, sprints, stories, story_events, poker_sessions, poker_votes).
+6. Criar rotas (Route Handlers) ou Server Actions para CRUD e eventos de transição (auditoria).
+7. Tempo real: Vercel Realtime/Ably/Pusher para Kanban/Poker multiusuário.
+
+## Administração de usuários (promover/rebaixar)
+
+- Endpoints protegidos (precisa estar logado e autorizado):
+  - POST /api/admin/users   — promove um usuário a admin.
+  - DELETE /api/admin/users — rebaixa um usuário (remove admin).
+- Corpo (JSON):
+  - { "email": "usuario@empresa.com" }
+
+Bootstrap
+- Se não existe nenhum admin ainda, o primeiro usuário logado pode se promover chamando POST com seu próprio e-mail.
+- Opcional: use ADMIN_SEED_EMAILS para permitir que e-mails listados promovam (seed inicial).
+
+Variáveis no .env.local:
+```
+# lista separada por vírgula
+ADMIN_SEED_EMAILS="seu-email@empresa.com,outro@empresa.com"
+```
+
+Como chamar (após login)
+
+Console do navegador (F12 > Console):
+```js
+// Promover
+fetch("/api/admin/users", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email: "usuario@empresa.com" })
+}).then(r => r.json()).then(console.log);
+
+// Rebaixar
+fetch("/api/admin/users", {
+  method: "DELETE",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email: "usuario@empresa.com" })
+}).then(r => r.json()).then(console.log);
+```
+
+cURL (requer cookie de sessão do NextAuth)
+1) Obtenha o cookie de sessão no navegador (Application > Cookies > next-auth.session-token).
+2) Use no header Cookie:
+```bash
+curl -X POST http://localhost:3000/api/admin/users \
+  -H "Content-Type: application/json" \
+  -H "Cookie: next-auth.session-token=SEU_TOKEN_AQUI" \
+  -d '{"email":"usuario@empresa.com"}'
+```
+
+Notas
+- Após promover/rebaixar, peça para o usuário sair e entrar novamente para refletir admin na sessão.
+- Apenas admins podem criar projetos (quando ALLOW_PROJECT_SELF_CREATE != "true"). Caso contrário, siga a política via envs.
