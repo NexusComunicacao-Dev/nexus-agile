@@ -88,16 +88,44 @@ export const authOptions: NextAuthOptions = {
         const client = await clientPromise;
         const db = client.db(process.env.MONGODB_DB);
         const users = db.collection("users");
+        const invitations = db.collection("project_invitations");
+        const projectsCol = db.collection("projects");
 
+        // Seed / bootstrap admin (já existente)
         const seed = parseList(process.env.ADMIN_SEED_EMAILS);
         if (seed.includes(email)) {
-          await users.updateOne({ email }, { $set: { admin: true } });
-          return;
+            await users.updateOne({ email }, { $set: { admin: true } });
+        } else {
+          const count = await users.countDocuments({ admin: true });
+          if (count === 0) {
+            await users.updateOne({ email }, { $set: { admin: true } });
+          }
         }
 
-        const count = await users.countDocuments({ admin: true });
-        if (count === 0) {
-          await users.updateOne({ email }, { $set: { admin: true } });
+        // Processa convites pendentes (ignora cancelados)
+        const pending = await invitations.find({
+          email,
+            acceptedAt: { $exists: false },
+            canceledAt: { $exists: false }
+        }).toArray();
+        if (pending.length) {
+          const userDoc = await users.findOne({ email });
+          if (userDoc?._id) {
+            const userIdStr = String(userDoc._id);
+            const projectIds = [...new Set(pending.map((p: { projectId: string }) => p.projectId))];
+            await Promise.all(
+              projectIds.map(pid =>
+                projectsCol.updateOne(
+                  { _id: pid },
+                  { $addToSet: { memberIds: userIdStr } }
+                )
+              )
+            );
+            await invitations.updateMany(
+              { email, acceptedAt: { $exists: false } },
+              { $set: { acceptedAt: new Date().toISOString() } }
+            );
+          }
         }
       } catch {
         // ignore

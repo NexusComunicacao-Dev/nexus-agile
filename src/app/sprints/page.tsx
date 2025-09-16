@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
+import { useSession } from "next-auth/react"; // NEW
 
 type Status = "todo" | "doing" | "done";
 
@@ -42,6 +43,9 @@ export default function SprintsPage() {
   // Selected project (required)
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string | null>(null);
+
+  const { data: session } = useSession(); // NEW
+  const isAdmin = Boolean((session?.user as any)?.admin); // NEW
 
   useEffect(() => {
     try {
@@ -169,6 +173,7 @@ export default function SprintsPage() {
   }
 
   function startSprint(data: SprintFormData) {
+    if (!isAdmin) return; // NEW guard
     const s: Sprint = {
       id: genId("S"),
       name: data.name,
@@ -182,6 +187,7 @@ export default function SprintsPage() {
   }
 
   function finishSprint() {
+    if (!isAdmin) return; // NEW guard
     setActiveSprint((spr) => {
       if (!spr) return spr;
       const completed = spr.stories.filter((s) => s.status === "done");
@@ -239,17 +245,20 @@ export default function SprintsPage() {
     <section className="grid gap-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Sprints {projectName ? `• ${projectName}` : ""}</h1>
+          <h1 className="text-2xl font-semibold">Sprints</h1>
           <p className="text-xs text-foreground/60">
-            Gerencie backlog, inicie/finalize sprints e mova histórias entre backlog e sprint (escopo do projeto).
+            Gerencie backlog, inicie/finalize sprints e mova histórias entre backlog e sprint.
+            {!isAdmin && " (Somente admins podem iniciar ou finalizar sprints)"} {/* NEW */}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           {!activeSprint ? (
             <button
-              onClick={() => setSprintModalOpen(true)}
-              className="h-9 rounded-md bg-foreground px-3 text-background text-sm font-medium hover:opacity-90"
+              onClick={() => isAdmin && setSprintModalOpen(true)} // NEW guard
+              disabled={!isAdmin}
+              className="h-9 rounded-md bg-foreground px-3 text-background text-sm font-medium hover:opacity-90 disabled:opacity-40"
+              title={!isAdmin ? "Apenas admin pode iniciar sprint" : ""}
             >
               Iniciar sprint
             </button>
@@ -257,7 +266,9 @@ export default function SprintsPage() {
             <div className="flex items-center gap-2">
               <button
                 onClick={finishSprint}
-                className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-foreground/5"
+                disabled={!isAdmin}
+                className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-foreground/5 disabled:opacity-40"
+                title={!isAdmin ? "Apenas admin pode finalizar sprint" : ""}
               >
                 Finalizar sprint
               </button>
@@ -464,9 +475,10 @@ export default function SprintsPage() {
         }}
       />
       <StartSprintModal
-        open={sprintModalOpen}
+        open={sprintModalOpen && isAdmin} // NEW: só abre se admin
         onClose={() => setSprintModalOpen(false)}
         onSubmit={(data) => {
+          if (!isAdmin) return; // NEW guard
           startSprint(data);
           setSprintModalOpen(false);
         }}

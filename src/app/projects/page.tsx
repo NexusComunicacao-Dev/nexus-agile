@@ -8,6 +8,9 @@ type Project = { _id: string; name: string; key: string; ownerId: string; member
 const LS_SELECTED_PROJECT = "wm_selected_project_v1";
 const allowSelfCreate = process.env.NEXT_PUBLIC_ALLOW_PROJECT_SELF_CREATE === "true";
 
+// NEW: tipo para toast
+type Notice = { id: string; type: "success" | "error" | "info"; msg: string };
+
 export default function ProjectsPage() {
   const { data: session } = useSession();
   const meId = (session?.user as any)?.id as string | undefined;
@@ -20,8 +23,10 @@ export default function ProjectsPage() {
   const [email, setEmail] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
 
-  // NEW: admin panel state
-  const [adminEmail, setAdminEmail] = useState("");
+  // NEW: estados para pedido de admin e toasts
+  const [requestReason, setRequestReason] = useState("");
+  const [reqLoading, setReqLoading] = useState(false);
+  const [notices, setNotices] = useState<Notice[]>([]);
 
   const selectedProject = useMemo(
     () => items.find((p) => p._id === selected) || null,
@@ -91,42 +96,58 @@ export default function ProjectsPage() {
     window.location.href = "/sprints";
   }
 
-  // NEW: admin actions
-  async function promote() {
-    const e = adminEmail.trim().toLowerCase();
-    if (!e) return;
-    const res = await fetch("/api/admin/users", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: e }),
-    });
-    if (res.ok) {
-      setAdminEmail("");
-      alert("Usuário promovido a admin. Faça login novamente para refletir a permissão na sessão.");
-    } else {
-      const err = await res.json().catch(() => ({}));
-      alert(err?.error || "Falha ao promover");
-    }
+  function pushNotice(type: Notice["type"], msg: string, ttl = 4000) {
+    const id = crypto.randomUUID();
+    setNotices((n) => [...n, { id, type, msg }]);
+    setTimeout(() => setNotices((n) => n.filter((x) => x.id !== id)), ttl);
   }
-  async function demote() {
-    const e = adminEmail.trim().toLowerCase();
-    if (!e) return;
-    const res = await fetch("/api/admin/users", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: e }),
-    });
-    if (res.ok) {
-      setAdminEmail("");
-      alert("Usuário rebaixado. Faça login novamente para refletir na sessão.");
-    } else {
-      const err = await res.json().catch(() => ({}));
-      alert(err?.error || "Falha ao rebaixar");
+
+  async function submitAdminRequest() {
+    if (reqLoading) return;
+    setReqLoading(true);
+    try {
+      const res = await fetch("/api/admin/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: requestReason.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        pushNotice(
+          "success",
+          data?.status === "pending"
+            ? "Pedido enviado. Aguarde avaliação."
+            : "Pedido registrado."
+        );
+        setRequestReason("");
+      } else {
+        pushNotice("error", data?.error || "Falha ao enviar pedido");
+      }
+    } finally {
+      setReqLoading(false);
     }
   }
 
   return (
     <section className="grid gap-6">
+      {/* NEW: container de toasts */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+        {notices.map((n) => (
+          <div
+            key={n.id}
+            className={`rounded-md px-3 py-2 text-xs shadow border ${
+              n.type === "success"
+                ? "bg-green-500/10 border-green-500/30 text-green-700"
+                : n.type === "error"
+                ? "bg-red-500/10 border-red-500/30 text-red-600"
+                : "bg-foreground/10 border-foreground/30 text-foreground/80"
+            }`}
+          >
+            {n.msg}
+          </div>
+        ))}
+      </div>
+
       <header>
         <h1 className="text-2xl font-semibold">Projetos</h1>
         <p className="text-xs text-foreground/60">
@@ -206,26 +227,31 @@ export default function ProjectsPage() {
             </>
           )}
 
-          {/* NEW: Admin panel */}
-          {isAdmin && (
-            <div className="mt-6 rounded-md border border-foreground/10 p-3">
-              <h3 className="mb-2 text-sm font-semibold">Admin</h3>
-              <div className="flex gap-2">
-                <input
-                  value={adminEmail}
-                  onChange={(e) => setAdminEmail(e.target.value)}
-                  placeholder="email do usuário"
-                  className="h-9 flex-1 rounded-md border border-foreground/20 bg-background px-3 text-sm"
-                />
-                <button onClick={promote} className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-foreground/5">
-                  Promover
-                </button>
-                <button onClick={demote} className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-foreground/5">
-                  Rebaixar
+          {/* NEW: painel de pedido de admin (apenas não-admin) */}
+          {!isAdmin && (
+            <div className="mt-8 rounded-md border border-foreground/10 p-3">
+              <h3 className="mb-2 text-sm font-semibold">Solicitar acesso de admin</h3>
+              <p className="text-[11px] text-foreground/60 mb-2">
+                Admins podem criar projetos e gerenciar usuários. Descreva por que precisa dessa permissão.
+              </p>
+              <textarea
+                value={requestReason}
+                onChange={(e) => setRequestReason(e.target.value)}
+                placeholder="Motivo (opcional, até 500 caracteres)"
+                maxLength={500}
+                className="min-h-24 w-full resize-none rounded-md border border-foreground/20 bg-background p-2 text-xs"
+              />
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <button
+                  onClick={submitAdminRequest}
+                  disabled={reqLoading}
+                  className="h-8 rounded-md bg-foreground px-3 text-background text-xs font-medium hover:opacity-90 disabled:opacity-50"
+                >
+                  {reqLoading ? "Enviando..." : "Enviar pedido"}
                 </button>
               </div>
-              <p className="mt-2 text-[11px] text-foreground/60">
-                Observação: o usuário precisa ter feito login ao menos uma vez para existir na base. Após mudar permissões, peça para relogar.
+              <p className="mt-2 text-[10px] text-foreground/50">
+                Você será notificado pelos administradores (fora da plataforma) quando aprovado.
               </p>
             </div>
           )}

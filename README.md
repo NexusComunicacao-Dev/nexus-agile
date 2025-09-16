@@ -125,3 +125,35 @@ curl -X POST http://localhost:3000/api/admin/users \
 Notas
 - Após promover/rebaixar, peça para o usuário sair e entrar novamente para refletir admin na sessão.
 - Apenas admins podem criar projetos (quando ALLOW_PROJECT_SELF_CREATE != "true"). Caso contrário, siga a política via envs.
+
+## E-mail / Notificações
+
+Variáveis necessárias:
+```
+SMTP_HOST=smtp.seudominio.com
+SMTP_PORT=587
+SMTP_USER=usuario
+SMTP_PASS=senha
+MAIL_FROM="Nexus Agile <no-reply@seudominio.com>"
+APP_BASE_URL="http://localhost:3000" # ou URL de produção
+ADMIN_REQUEST_NOTIFY_SUBJECT="Novo pedido de admin"
+```
+
+Fallback:
+- Se qualquer variável SMTP estiver ausente, o envio vira log (console) para desenvolvimento.
+
+Eventos implementados:
+- Adição de membro ao projeto: e-mail para o usuário adicionado com link para /projects.
+- Pedido de admin (rota POST /api/admin/requests): e-mail para todos admins.
+
+Pedidos de admin:
+- POST /api/admin/requests  { "reason": "Preciso gerenciar projetos" }
+- GET  /api/admin/requests   (apenas admins)
+- PATCH /api/admin/requests  { "id": "<id>", "status": "approved" | "rejected" } (não promove automaticamente)
+- Promoção real continua via:
+  - POST /api/admin/users { "email": "user@empresa.com" }
+
+Ordem recomendada:
+1. Usuário pede admin (POST /api/admin/requests).
+2. Admin avalia (GET /api/admin/requests) e decide (PATCH).
+3. Admin promove via rota /api/admin/users (POST) se aprovado.

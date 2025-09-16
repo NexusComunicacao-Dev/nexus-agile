@@ -34,3 +34,29 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   await sprints.insertOne(sprint as any);
   return NextResponse.json(sprint, { status: 201 });
 }
+
+export async function GET(req: Request, { params }: { params: { id: string } }) {
+  const { userId, error } = await requireUser();
+  if (error) return error;
+  const projectId = params.id;
+  const { sprints, projects, stories } = await collections();
+
+  const proj = await projects.findOne({ _id: projectId, memberIds: userId! });
+  if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const searchParams = new URL(req.url).searchParams;
+  const wantActive = searchParams.get("active");
+
+  const activeSprint = await sprints.findOne({ projectId, status: "active" });
+  const backlog = await stories
+    .find({ projectId, $or: [{ sprintId: null }, { sprintId: { $exists: false } }] })
+    .sort({ createdAt: -1 })
+    .toArray();
+  const history = wantActive === "1" || wantActive === "true" ? await sprints
+    .find({ projectId, status: "completed" })
+    .sort({ completedAt: -1 })
+    .limit(25)
+    .toArray() : [];
+
+  return NextResponse.json({ activeSprint, backlog, history });
+}
