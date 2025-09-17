@@ -1,298 +1,255 @@
 "use client";
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 
-import { useEffect, useMemo, useState } from "react";
-
-const deck = ["0", "1", "2", "3", "5", "8", "13", "21", "34", "?", "☕"];
-
-type Vote = { user: string; value?: string };
-
-// Minimal types to integrate with sprint/backlog
-type Status = "todo" | "doing" | "done";
-type Story = {
-  id: string;
-  title: string;
-  description?: string;
-  assignees: string[];
-  priority: "low" | "medium" | "high";
-  points?: number;
-  tags?: string[];
+interface PokerSession {
+  _id: string;
+  projectId: string;
+  storyId?: string;
+  ownerId: string;
+  status: string;
+  deck: (number | "?")[];
   createdAt: string;
-  status: Status;
-  history?: { status: Status; at: string }[];
-};
-type Sprint = {
-  id: string;
-  name: string;
-  goal?: string;
-  startDate: string;
-  endDate?: string;
-  stories: Story[];
-  status: "active" | "completed";
-  completedAt?: string;
-};
+  revealedAt?: string;
+  consensusPoints?: number;
+}
+interface PokerVote {
+  _id: string;
+  sessionId: string;
+  userId: string;
+  value: number | "?" | null;
+}
 
-const LS_BACKLOG = "wm_backlog_v1";
-const LS_ACTIVE_SPRINT = "wm_active_sprint_v1";
-const LS_POKER_STORY = "wm_poker_story_v1";
+const LS_SELECTED_PROJECT = "wm_selected_project_v1";
+const DEFAULT_DECK: (number | "?")[] = [1, 2, 3, 5, 8, 13, 21, "?"];
 
 export default function PokerPage() {
-  const [participants, setParticipants] = useState<string[]>(["Você"]);
-  const [votes, setVotes] = useState<Record<string, Vote>>({
-    Você: { user: "Você" },
-  });
-  const [name, setName] = useState("");
-  const [revealed, setRevealed] = useState(false);
-
-  // Selected story for voting
-  const [story, setStory] = useState<Story | null>(null);
-  const [applyLoading, setApplyLoading] = useState(false);
+  const { data: session } = useSession();
+  const meId = (session?.user as any)?.id as string | undefined;
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<PokerSession[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [storyId, setStoryId] = useState("");
+  const [current, setCurrent] = useState<PokerSession | null>(null);
+  const [votes, setVotes] = useState<PokerVote[]>([]);
+  const [voting, setVoting] = useState(false);
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(LS_POKER_STORY);
-      if (raw) setStory(JSON.parse(raw));
-    } catch {
-      /* ignore */
-    }
+      setProjectId(localStorage.getItem(LS_SELECTED_PROJECT));
+    } catch {}
   }, []);
+  useEffect(() => {
+    if (projectId) loadList();
+  }, [projectId]);
+  useEffect(() => {
+    if (current) loadSession(current._id);
+  }, [current?._id]);
 
-  function clearStory() {
-    try {
-      localStorage.removeItem(LS_POKER_STORY);
-    } catch {
-      /* ignore */
+  async function loadList() {
+    if (!projectId) return;
+    setLoading(true);
+    const res = await fetch(`/api/projects/${projectId}/poker`, { cache: "no-store" });
+    if (res.ok) setSessions(await res.json());
+    setLoading(false);
+  }
+  async function loadSession(id: string) {
+    const res = await fetch(`/api/poker/${id}`, { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      setCurrent(data.session);
+      setVotes(data.votes);
     }
-    setStory(null);
+  }
+  async function createSession() {
+    if (!projectId) return;
+    setCreating(true);
+    const res = await fetch(`/api/projects/${projectId}/poker`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ storyId: storyId.trim() || undefined, deck: DEFAULT_DECK }),
+    });
+    if (res.ok) {
+      setStoryId("");
+      await loadList();
+    }
+    setCreating(false);
+  }
+  async function vote(val: number | "?" | null) {
+    if (!current) return;
+    setVoting(true);
+    await fetch(`/api/poker/${current._id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "vote", value: val }),
+    });
+    await loadSession(current._id);
+    setVoting(false);
+  }
+  async function reveal() {
+    if (!current) return;
+    await fetch(`/api/poker/${current._id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reveal" }),
+    });
+    await loadSession(current._id);
+    await loadList();
+  }
+  async function close() {
+    if (!current) return;
+    await fetch(`/api/poker/${current._id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "close" }),
+    });
+    await loadSession(current._id);
+    await loadList();
   }
 
-  function addParticipant() {
-    const n = name.trim();
-    if (!n || participants.includes(n)) return;
-    setParticipants((p) => [...p, n]);
-    setVotes((v) => ({ ...v, [n]: { user: n } }));
-    setName("");
-  }
+  const myVote = votes.find((v) => v.userId === meId)?.value ?? null;
 
-  function vote(user: string, value: string) {
-    if (revealed) return;
-    setVotes((v) => ({ ...v, [user]: { user, value } }));
-  }
-
-  function reset() {
-    setVotes((v) =>
-      Object.fromEntries(Object.values(v).map((x) => [x.user, { user: x.user }]))
+  if (!projectId)
+    return (
+      <div className="p-6 text-sm">
+        Selecione um projeto primeiro em{" "}
+        <a className="underline" href="/projects">
+          Projetos
+        </a>
+        .
+      </div>
     );
-    setRevealed(false);
-  }
-
-  // group counts
-  const summary = useMemo(() => {
-    if (!revealed) return null;
-    const chosen = Object.values(votes)
-      .map((v) => v.value)
-      .filter(Boolean) as string[];
-    // agrupa contagem
-    const freq = Object.groupBy(chosen, (x) => x);
-    const entries = Object.entries(freq).map(([k, arr]) => [k, arr?.length ?? 0]);
-    entries.sort((a, b) => Number(b[1]) - Number(a[1]));
-    return entries;
-  }, [votes, revealed]);
-
-  // Get best numeric estimate (most voted; ignores ? and ☕)
-  const bestNumeric = useMemo(() => {
-    if (!summary) return null;
-    for (const [k] of summary) {
-      if (/^\d+$/.test(String(k))) return Number(k);
-    }
-    return null;
-  }, [summary]);
-
-  async function applyEstimate() {
-    if (!story || bestNumeric == null) return;
-    setApplyLoading(true);
-    try {
-      // Update in backlog
-      const braw = localStorage.getItem(LS_BACKLOG);
-      if (braw) {
-        const b = JSON.parse(braw) as Story[];
-        const updated = b.map((s) => (s.id === story.id ? { ...s, points: bestNumeric } : s));
-        localStorage.setItem(LS_BACKLOG, JSON.stringify(updated));
-      }
-      // Update in active sprint
-      const araw = localStorage.getItem(LS_ACTIVE_SPRINT);
-      if (araw) {
-        const s = JSON.parse(araw) as Sprint | null;
-        if (s && Array.isArray(s.stories)) {
-          const updatedStories = s.stories.map((st) =>
-            st.id === story.id ? { ...st, points: bestNumeric } : st
-          );
-          const next: Sprint = { ...s, stories: updatedStories };
-          localStorage.setItem(LS_ACTIVE_SPRINT, JSON.stringify(next));
-        }
-      }
-      // Update local object and clear selection
-      setStory((prev) => (prev ? { ...prev, points: bestNumeric } : prev));
-      localStorage.removeItem(LS_POKER_STORY);
-      // Redirect to /sprints (ensures UI updates)
-      window.location.href = "/sprints";
-    } finally {
-      setApplyLoading(false);
-    }
-  }
 
   return (
-    <section className="grid gap-6">
-      <header className="flex items-end justify-between gap-3">
+    <div className="grid gap-8">
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold">Planning Poker</h2>
+          <h1 className="text-2xl font-semibold">Planning Poker</h1>
           <p className="text-xs text-foreground/60">
-            Vote e aplique a estimativa à história selecionada.
+            Estimativa colaborativa. Revele somente após todos votarem.
           </p>
         </div>
-        {story && (
+        <div className="flex gap-2 items-center">
+          <input
+            value={storyId}
+            onChange={(e) => setStoryId(e.target.value)}
+            placeholder="Story ID (opcional)"
+            className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm"
+          />
           <button
-            onClick={clearStory}
-            className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-foreground/5"
+            onClick={createSession}
+            disabled={creating}
+            className="h-9 rounded-md bg-foreground px-3 text-background text-sm font-medium hover:opacity-90 disabled:opacity-40"
           >
-            Limpar história
+            Nova sessão
           </button>
-        )}
+        </div>
       </header>
 
-      {story ? (
-        <div className="rounded-lg border border-foreground/10 bg-foreground/[0.02] p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="min-w-0">
-              <div className="text-xs text-foreground/60">{story.id}</div>
-              <div className="text-sm font-semibold break-words">{story.title}</div>
-            </div>
-            {typeof story.points === "number" && (
-              <span className="text-[10px] rounded bg-foreground/10 px-2 py-0.5">
-                Pontos atuais: {story.points}
-              </span>
-            )}
-          </div>
-          {story.description && (
-            <p className="text-xs text-foreground/70">{story.description}</p>
-          )}
-          <div className="mt-2 flex flex-wrap gap-2 text-[10px]">
-            <span className="rounded bg-foreground/10 px-2 py-0.5">{story.priority}</span>
-            {story.tags?.map((t) => (
-              <span key={t} className="rounded bg-foreground/10 px-2 py-0.5">#{t}</span>
-            ))}
-            {story.assignees?.length ? (
-              <span className="text-foreground/60">• {story.assignees.join(", ")}</span>
-            ) : null}
-          </div>
-        </div>
-      ) : (
-        <div className="text-xs text-foreground/60">
-          Nenhuma história selecionada. Na página de Sprints, clique em “Votar no Poker” em uma história sem pontuação.
-        </div>
-      )}
-
-      <div className="flex items-center gap-2">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Adicionar participante"
-          className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm"
-        />
-        <button
-          onClick={addParticipant}
-          className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-foreground/5"
-        >
-          Adicionar
-        </button>
-        <button
-          onClick={() => setRevealed(true)}
-          disabled={revealed}
-          className="h-9 rounded-md bg-foreground px-3 text-background text-sm font-medium hover:opacity-90 disabled:opacity-50"
-        >
-          Revelar
-        </button>
-        <button
-          onClick={reset}
-          className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-foreground/5"
-        >
-          Reset
-        </button>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="grid gap-3">
-          <h3 className="text-sm font-semibold">Participantes</h3>
-          <ul className="grid gap-2">
-            {participants.map((u) => (
+      <section className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border border-foreground/10 p-4 grid gap-3">
+          <h2 className="text-sm font-semibold">Sessões</h2>
+          {loading && <div className="text-xs text-foreground/60">Carregando...</div>}
+          <ul className="grid gap-2 max-h-80 overflow-auto pr-1">
+            {sessions.map((s) => (
               <li
-                key={u}
-                className="rounded-md border border-foreground/10 bg-foreground/[0.02] p-3"
+                key={s._id}
+                onClick={() => setCurrent(s)}
+                className={`cursor-pointer rounded-md border border-foreground/10 p-2 text-xs flex justify-between items-center ${
+                  current?._id === s._id
+                    ? "bg-foreground/10"
+                    : "bg-background hover:bg-foreground/5"
+                }`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">{u}</span>
-                  <span className="text-xs text-foreground/60">
-                    {revealed ? votes[u]?.value ?? "—" : votes[u]?.value ? "votou" : "pendente"}
-                  </span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {deck.map((c) => (
-                    <button
-                      key={c}
-                      onClick={() => vote(u, c)}
-                      disabled={revealed}
-                      className={`h-8 min-w-8 rounded-md border px-2 text-xs ${
-                        votes[u]?.value === c && !revealed
-                          ? "bg-foreground text-background"
-                          : "border-foreground/20 hover:bg-foreground/5"
-                      }`}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
+                <span className="truncate">{s.storyId || s._id}</span>
+                <span className="text-[10px] text-foreground/50">{s.status}</span>
               </li>
             ))}
+            {sessions.length === 0 && !loading && (
+              <li className="text-[11px] text-foreground/60">Nenhuma sessão.</li>
+            )}
           </ul>
         </div>
-
-        <div className="grid gap-3">
-          <h3 className="text-sm font-semibold">Resumo</h3>
-          {!revealed && (
-            <div className="text-xs text-foreground/60">
-              Aguarde “Revelar” para ver estatísticas.
-            </div>
-          )}
-          {revealed && (
-            <div className="grid gap-2">
-              {summary?.length ? (
-                summary.map(([k, count]) => (
-                  <div
-                    key={k}
-                    className="flex items-center justify-between rounded-md border border-foreground/10 p-2"
+        <div className="rounded-lg border border-foreground/10 p-4 grid gap-3 md:col-span-2">
+          {!current ? (
+            <div className="text-xs text-foreground/60">Selecione uma sessão.</div>
+          ) : (
+            <div className="grid gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold">Sessão: {current.storyId || current._id}</div>
+                <div className="flex gap-2 text-[10px] text-foreground/60">
+                  Status: {current.status}
+                  {current.consensusPoints != null ? ` • Consenso: ${current.consensusPoints}` : ""}
+                </div>
+              </div>
+              {current.status === "active" && (
+                <div className="flex flex-wrap gap-2">
+                  {current.deck.map((card) => (
+                    <button
+                      key={String(card)}
+                      onClick={() => vote(card)}
+                      disabled={voting}
+                      className={`h-10 w-10 rounded-md border text-xs font-medium flex items-center justify-center ${
+                        myVote === card ? "bg-foreground text-background" : "bg-background hover:bg-foreground/5"
+                      }`}
+                    >
+                      {card}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => vote(null)}
+                    disabled={voting}
+                    className={`h-10 px-3 rounded-md border text-xs ${
+                      myVote === null ? "bg-foreground text-background" : "bg-background hover:bg-foreground/5"
+                    }`}
                   >
-                    <span className="text-sm">{k}</span>
-                    <span className="text-xs text-foreground/60">{String(count)}</span>
-                  </div>
-                ))
-              ) : (
-                <div className="text-xs text-foreground/60">Sem votos</div>
+                    Clear
+                  </button>
+                </div>
               )}
-              <div className="mt-2 flex items-center justify-between">
-                <span className="text-xs text-foreground/60">
-                  Estimativa sugerida: {bestNumeric != null ? `${bestNumeric} pts` : "—"}
-                </span>
-                <button
-                  onClick={applyEstimate}
-                  disabled={!story || bestNumeric == null || applyLoading}
-                  className="h-9 rounded-md bg-foreground px-3 text-background text-sm font-medium hover:opacity-90 disabled:opacity-50"
-                >
-                  Aplicar na história
-                </button>
+              {current.status === "revealed" && (
+                <div className="text-xs text-foreground/70">
+                  Cartas reveladas. Consenso:{" "}
+                  {current.consensusPoints != null ? current.consensusPoints : "-"}
+                </div>
+              )}
+              <div className="flex gap-2 text-[10px] flex-wrap">
+                {current.status === "active" && (
+                  <button
+                    onClick={reveal}
+                    className="rounded-md border border-foreground/20 px-3 py-1 hover:bg-foreground/5"
+                  >
+                    Revelar
+                  </button>
+                )}
+                {current.status !== "closed" && (
+                  <button
+                    onClick={close}
+                    className="rounded-md border border-foreground/20 px-3 py-1 hover:bg-foreground/5"
+                  >
+                    Fechar
+                  </button>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <h3 className="text-[11px] font-semibold">Votos</h3>
+                <ul className="grid gap-1 max-h-56 overflow-auto pr-1">
+                  {votes.map((v) => (
+                    <li key={v._id} className="text-[11px] flex justify-between border-b border-foreground/5 py-1">
+                      <span className="truncate">{v.userId}</span>
+                      <span className="font-mono">
+                        {current.status === "active" ? (v.value == null ? "…" : "•") : v.value == null ? "—" : v.value}
+                      </span>
+                    </li>
+                  ))}
+                  {votes.length === 0 && <li className="text-[11px] text-foreground/50">Sem votos.</li>}
+                </ul>
               </div>
             </div>
           )}
         </div>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }

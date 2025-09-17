@@ -10,10 +10,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const { stories, sprints, projects } = await collections();
   const story = await stories.findOne({ _id: params.id });
   if (!story) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const sprint = await sprints.findOne({ _id: story.sprintId });
-  if (!sprint) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const proj = await projects.findOne({ _id: sprint.projectId, memberIds: userId! });
-  if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  if (story.projectId) {
+    const proj = await projects.findOne({ _id: story.projectId, memberIds: userId! });
+    if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const updates: any = {};
   if (body.title) updates.title = String(body.title);
@@ -22,10 +23,24 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (body.priority) updates.priority = body.priority;
   if (body.points !== undefined) updates.points = body.points != null ? Number(body.points) : undefined;
   if (body.tags) updates.tags = Array.isArray(body.tags) ? body.tags : [];
+  if (body.sprintId !== undefined) {
+    // Move para outro sprint ou backlog (sprintId = null / undefined / "backlog")
+    const targetSprintId = body.sprintId;
+    if (!targetSprintId || targetSprintId === "backlog") {
+      updates.sprintId = undefined;
+    } else {
+      const targetSprint = await sprints.findOne({ _id: targetSprintId });
+      if (!targetSprint) return NextResponse.json({ error: "Target sprint not found" }, { status: 404 });
+      updates.sprintId = targetSprintId;
+    }
+  }
   if (body.status) {
     const nextStatus = String(body.status);
+    const hist = (story.history || []).slice();
+    const last = hist[hist.length - 1];
+    if (!last || last.status !== nextStatus) hist.push({ status: nextStatus, at: new Date().toISOString() });
     updates.status = nextStatus;
-    updates.history = [...(story.history || []), { status: nextStatus, at: new Date().toISOString() }];
+    updates.history = hist;
   }
 
   await stories.updateOne({ _id: params.id }, { $set: updates });

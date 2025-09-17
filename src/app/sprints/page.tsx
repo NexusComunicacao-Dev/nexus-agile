@@ -1,55 +1,62 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
-import { useSession } from "next-auth/react"; // NEW
+import { useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 
+// Tipos locais (simplificados)
 type Status = "todo" | "doing" | "done";
-
-type Story = {
-  id: string;
+interface Story {
+  _id: string;
   title: string;
-  description?: string;
-  assignees: string[];
-  priority: "low" | "medium" | "high";
-  points?: number;
-  tags?: string[];
-  createdAt: string;
   status: Status;
-  history?: { status: Status; at: string }[]; // status timeline
-};
-
-type Sprint = {
-  id: string;
+  points?: number;
+  priority?: string;
+  createdAt: string;
+  sprintId?: string;
+}
+interface Sprint {
+  _id: string;
   name: string;
   goal?: string;
-  startDate: string;
-  endDate?: string;
-  stories: Story[];
   status: "active" | "completed";
+  createdAt: string;
   completedAt?: string;
-};
+  projectId: string;
+}
+
+const LS_SELECTED_PROJECT = "wm_selected_project_v1";
 
 export default function SprintsPage() {
-  const [backlog, setBacklog] = useState<Story[]>([
-    sampleStory("Definir visão do produto", { priority: "high", points: 5 }),
-    sampleStory("Configurar CI/CD", { priority: "medium", points: 3 }),
-  ]);
-  const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
-  const [history, setHistory] = useState<Sprint[]>([]);
+  const { data: session } = useSession();
+  const isAdmin = Boolean((session?.user as any)?.admin);
 
-  const [storyModalTarget, setStoryModalTarget] = useState<null | "backlog" | "sprint">(null);
-  const [sprintModalOpen, setSprintModalOpen] = useState(false);
-
-  // Selected project (required)
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [active, setActive] = useState<Sprint | null>(null);
+  const [activeStories, setActiveStories] = useState<Story[]>([]);
+  const [backlog, setBacklog] = useState<Story[]>([]);
+  const [history, setHistory] = useState<Sprint[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  const { data: session } = useSession(); // NEW
-  const isAdmin = Boolean((session?.user as any)?.admin); // NEW
+  // Modais
+  const [creatingSprint, setCreatingSprint] = useState(false);
+  const [creatingStory, setCreatingStory] = useState(false);
+  const [editingStory, setEditingStory] = useState<Story | null>(null);
+  const [newSprintName, setNewSprintName] = useState("");
+  const [newSprintGoal, setNewSprintGoal] = useState("");
+  const [newStoryTitle, setNewStoryTitle] = useState("");
+  const [storyPoints, setStoryPoints] = useState<string>("");
+  const [storyStatus, setStoryStatus] = useState<Status>("todo");
+
+  // Adição: estados de filtro
+  const [filterPriority, setFilterPriority] = useState<string>("all");
+  const [minPts, setMinPts] = useState<string>("");
+  const [maxPts, setMaxPts] = useState<string>("");
 
   useEffect(() => {
     try {
-      const pid = localStorage.getItem("wm_selected_project_v1");
+      const pid = localStorage.getItem(LS_SELECTED_PROJECT);
       const pname = localStorage.getItem("wm_selected_project_name");
       setProjectId(pid);
       setProjectName(pname);
@@ -58,177 +65,152 @@ export default function SprintsPage() {
     }
   }, []);
 
-  // local persistence (scoped by project)
-  const LS_BACKLOG = projectId ? `wm_${projectId}_backlog_v1` : "wm_backlog_v1";
-  const LS_ACTIVE_SPRINT = projectId ? `wm_${projectId}_active_sprint_v1` : "wm_active_sprint_v1";
-  const LS_HISTORY = projectId ? `wm_${projectId}_sprint_history_v1` : "wm_sprint_history_v1";
-  const LS_POKER_STORY = "wm_poker_story_v1"; // selected story for poker
-
-  // control hydration to avoid overwriting storage before initial load
-  const [hydrated, setHydrated] = useState(false);
-
-  // load from localStorage (when projectId changes)
-  useEffect(() => {
-    if (!projectId) return;
-    try {
-      const b = localStorage.getItem(LS_BACKLOG);
-      const a = localStorage.getItem(LS_ACTIVE_SPRINT);
-      const h = localStorage.getItem(LS_HISTORY);
-      if (b) setBacklog(sanitizeStories(JSON.parse(b)));
-      if (a) setActiveSprint(sanitizeSprint(JSON.parse(a)));
-      if (h) setHistory(sanitizeHistory(JSON.parse(h) as Sprint[]));
-    } catch {
-      /* ignore */
-    } finally {
-      setHydrated(true);
+  async function loadAll(pid: string) {
+    setLoading(true);
+    setError(null);
+    const res = await fetch(`/api/projects/${pid}/sprints?active=1`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      setError("Falha ao carregar sprints");
+      setLoading(false);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const data = await res.json();
+    setActive(data.activeSprint || null);
+    setActiveStories(data.activeStories || []);
+    setBacklog(data.backlog || []);
+    setHistory(data.history || []);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    if (projectId) loadAll(projectId);
   }, [projectId]);
 
-  // save to localStorage (only after hydration and with projectId)
-  useEffect(() => {
-    if (!hydrated || !projectId) return;
-    try {
-      localStorage.setItem(LS_BACKLOG, JSON.stringify(backlog));
-      localStorage.setItem(LS_ACTIVE_SPRINT, JSON.stringify(activeSprint));
-      localStorage.setItem(LS_HISTORY, JSON.stringify(dedupeById(history)));
-    } catch {
-      /* ignore */
+  async function createSprint() {
+    if (!projectId || !isAdmin) return;
+    if (!newSprintName.trim()) return;
+    const res = await fetch(`/api/projects/${projectId}/sprints`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: newSprintName.trim(),
+        goal: newSprintGoal.trim() || undefined,
+        startDate: new Date().toISOString(),
+      }),
+    });
+    if (res.ok) {
+      setNewSprintName("");
+      setNewSprintGoal("");
+      setCreatingSprint(false);
+      await loadAll(projectId);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, projectId, backlog, activeSprint, history]);
+  }
 
-  const todoCount = useMemo(
-    () => activeSprint?.stories.filter((s) => s.status !== "done").length ?? 0,
-    [activeSprint]
+  async function finishSprint() {
+    if (!active || !isAdmin) return;
+    const res = await fetch(`/api/sprints/${active._id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "completed" }),
+    });
+    if (res.ok && projectId) await loadAll(projectId);
+  }
+
+  async function createStory() {
+    if (!projectId) return;
+    if (!newStoryTitle.trim()) return;
+    const res = await fetch(`/api/sprints/backlog/stories`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: newStoryTitle.trim(), projectId }),
+    });
+    if (res.ok) {
+      setNewStoryTitle("");
+      setCreatingStory(false);
+      if (projectId) await loadAll(projectId);
+    }
+  }
+
+  async function moveToSprint(story: Story) {
+    if (!active || !projectId) return;
+    const res = await fetch(`/api/stories/${story._id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sprintId: active._id }),
+    });
+    if (res.ok) await loadAll(projectId!);
+  }
+
+  async function moveToBacklog(story: Story) {
+    if (!projectId) return;
+    const res = await fetch(`/api/stories/${story._id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sprintId: null }),
+    });
+    if (res.ok) await loadAll(projectId!);
+  }
+
+  function openEdit(story: Story) {
+    setEditingStory(story);
+    setStoryPoints(story.points != null ? String(story.points) : "");
+    setStoryStatus(story.status);
+  }
+
+  async function saveStoryEdits() {
+    if (!editingStory || !projectId) return;
+    const res = await fetch(`/api/stories/${editingStory._id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        points: storyPoints ? Number(storyPoints) : undefined,
+        status: storyStatus,
+      }),
+    });
+    if (res.ok) {
+      setEditingStory(null);
+      await loadAll(projectId);
+    }
+  }
+
+  // Função helper para aplicar filtros
+  function matchFilters(story: Story) {
+    if (filterPriority !== "all" && story.priority && story.priority !== filterPriority)
+      return false;
+    const min = minPts ? Number(minPts) : null;
+    const max = maxPts ? Number(maxPts) : null;
+    if (min !== null || max !== null) {
+      if (story.points == null) return false; // se filtrando por pontos, exigir pontos definidos
+      if (min !== null && story.points < min) return false;
+      if (max !== null && story.points > max) return false;
+    }
+    return true;
+  }
+
+  const filteredBacklog = useMemo(
+    () => backlog.filter(matchFilters),
+    [backlog, filterPriority, minPts, maxPts]
+  );
+  const filteredActiveStories = useMemo(
+    () => activeStories.filter(matchFilters),
+    [activeStories, filterPriority, minPts, maxPts]
   );
 
-  function createStory(data: StoryFormData, target: "backlog" | "sprint") {
-    const base = toStory(data);
-    if (target === "backlog") {
-      setBacklog((b) => [base, ...dedupeById(b)]);
-    }
-    if (target === "sprint") {
-      const now = new Date().toISOString();
-      const story: Story = { ...base, history: [{ status: "todo", at: now }] }; // initial status event
-      setActiveSprint((s) =>
-        s ? { ...s, stories: [story, ...dedupeById(s.stories.filter((x) => x.id !== story.id))] } : s
-      );
-    }
-  }
+  const doneCount = useMemo(
+    () => filteredActiveStories.filter((s) => s.status === "done").length,
+    [filteredActiveStories]
+  );
 
-  function addToSprint(id: string) {
-    setActiveSprint((s) => s ?? null);
-    if (!activeSprint) return;
-    setBacklog((prev) => {
-      const story = prev.find((x) => x.id === id);
-      if (!story) return prev;
-      const now = new Date().toISOString();
-      setActiveSprint((spr) => {
-        if (!spr) return spr;
-        const cleaned = spr.stories.filter((x) => x.id !== story.id);
-        const withHistory: Story = {
-          ...story,
-          status: "todo",
-          history: story.history?.length ? story.history : [{ status: "todo", at: now }], // initialize status history if missing
-        };
-        return { ...spr, stories: [withHistory, ...cleaned] };
-      });
-      return prev.filter((x) => x.id !== id);
-    });
-  }
-
-  function removeFromSprint(id: string) {
-    setActiveSprint((spr) => {
-      if (!spr) return spr;
-      const story = spr.stories.find((s) => s.id === id);
-      const remaining = spr.stories.filter((s) => s.id !== id); // remove duplicates (by id)
-      if (story) {
-        setBacklog((b) => {
-          const cleaned = b.filter((x) => x.id !== id);
-          return [{ ...story, status: "todo" }, ...cleaned];
-        });
-      }
-      return { ...spr, stories: remaining };
-    });
-  }
-
-  function updateStoryStatus(id: string, status: Status) {
-    setActiveSprint((spr) =>
-      spr
-        ? {
-            ...spr,
-            stories: spr.stories.map((s) => {
-              if (s.id !== id) return s;
-              if (s.status === status) return s;
-              const now = new Date().toISOString();
-              const hist = (s.history ?? []).slice();
-              const last = hist[hist.length - 1];
-              if (!last || last.status !== status) hist.push({ status, at: now }); // append status change to history
-              return { ...s, status, history: hist };
-            }),
-          }
-        : spr
-    );
-  }
-
-  function startSprint(data: SprintFormData) {
-    if (!isAdmin) return; // NEW guard
-    const s: Sprint = {
-      id: genId("S"),
-      name: data.name,
-      goal: data.goal,
-      startDate: data.startDate || new Date().toISOString(),
-      endDate: data.endDate || undefined,
-      stories: [],
-      status: "active",
-    };
-    setActiveSprint(s);
-  }
-
-  function finishSprint() {
-    if (!isAdmin) return; // NEW guard
-    setActiveSprint((spr) => {
-      if (!spr) return spr;
-      const completed = spr.stories.filter((s) => s.status === "done");
-      const notCompleted = spr.stories.filter((s) => s.status !== "done");
-      const ids = new Set(notCompleted.map((s) => s.id));
-      setBacklog((b) => [
-        ...notCompleted.map((s) => ({ ...s, status: "todo" as Status })),
-        ...b.filter((x) => !ids.has(x.id)),
-      ]);
-      const archived: Sprint = {
-        ...spr,
-        status: "completed",
-        completedAt: new Date().toISOString(),
-        stories: dedupeById(completed),
-      };
-      setHistory((h) => {
-        const filtered = h.filter((x) => x.id !== archived.id);
-        return dedupeById<Sprint>([archived, ...filtered]); // <— dedupe
-      });
-      return null;
-    });
-  }
-
-  // NEW: send story to Planning Poker
-  function goToPoker(story: Story) {
-    try {
-      localStorage.setItem(LS_POKER_STORY, JSON.stringify(story));
-      window.location.href = "/poker";
-    } catch {
-      /* ignore */
-    }
-  }
-
-  // Gate: require selected project
   if (!projectId) {
     return (
       <section className="grid place-items-center gap-4 py-16">
         <div className="text-center">
           <h2 className="text-xl font-semibold">Selecione um projeto</h2>
           <p className="mt-1 text-sm text-foreground/60">
-            As sprints existem dentro de um projeto. Vá para “Projetos” e crie/abra um projeto.
+            As sprints existem dentro de um projeto. Vá para "Projetos" e crie/abra
+            um projeto.
           </p>
           <a
             href="/projects"
@@ -245,582 +227,337 @@ export default function SprintsPage() {
     <section className="grid gap-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Sprints</h1>
+          <h1 className="text-2xl font-semibold">
+            Sprints {projectName ? `• ${projectName}` : ""}
+          </h1>
           <p className="text-xs text-foreground/60">
-            Gerencie backlog, inicie/finalize sprints e mova histórias entre backlog e sprint.
-            {!isAdmin && " (Somente admins podem iniciar ou finalizar sprints)"} {/* NEW */}
+            Gerencie backlog e sprints do projeto.{" "}
+            {!isAdmin && "(Apenas admins podem iniciar/finalizar sprints)"}
           </p>
         </div>
-
         <div className="flex items-center gap-2">
-          {!activeSprint ? (
+          {!active ? (
             <button
-              onClick={() => isAdmin && setSprintModalOpen(true)} // NEW guard
+              onClick={() => isAdmin && setCreatingSprint(true)}
               disabled={!isAdmin}
               className="h-9 rounded-md bg-foreground px-3 text-background text-sm font-medium hover:opacity-90 disabled:opacity-40"
-              title={!isAdmin ? "Apenas admin pode iniciar sprint" : ""}
+              title={!isAdmin ? "Apenas admin" : ""}
             >
               Iniciar sprint
             </button>
           ) : (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={finishSprint}
-                disabled={!isAdmin}
-                className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-foreground/5 disabled:opacity-40"
-                title={!isAdmin ? "Apenas admin pode finalizar sprint" : ""}
-              >
-                Finalizar sprint
-              </button>
-            </div>
+            <button
+              onClick={finishSprint}
+              disabled={!isAdmin}
+              className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-foreground/5 disabled:opacity-40"
+              title={!isAdmin ? "Apenas admin" : ""}
+            >
+              Finalizar sprint
+            </button>
           )}
+          <button
+            onClick={() => setCreatingStory(true)}
+            className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-foreground/5"
+          >
+            Nova história
+          </button>
         </div>
       </header>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Backlog */}
-        <section className="rounded-lg border border-foreground/10 bg-foreground/[0.02] p-4 transition-base">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Backlog</h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setStoryModalTarget("backlog")}
-                className="h-8 rounded-md border border-foreground/20 px-3 text-xs hover:bg-foreground/5"
-              >
-                Nova história
-              </button>
-            </div>
-          </div>
-          <ul className="grid gap-2">
-            {backlog.map((s) => (
-              <li
-                key={s.id}
-                className="rounded-md border border-foreground/10 bg-background p-3 animate-pop transition-base overflow-hidden"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-xs text-foreground/50">{s.id}</div>
-                    <div className="text-sm font-medium break-words">{s.title}</div>
-                    {s.description && (
-                      <div className="mt-1 text-xs text-foreground/70 line-clamp-2 break-words">
-                        {s.description}
-                      </div>
-                    )}
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
-                      <Badge>{s.priority}</Badge>
-                      {s.points ? <Badge>{s.points} pts</Badge> : null}
-                      {s.tags?.map((t) => (
-                        <Badge key={t}>#{t}</Badge>
-                      ))}
-                      {s.assignees.length ? (
-                        <span className="text-foreground/60">• {s.assignees.join(", ")}</span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <button
-                      className="rounded-md border border-foreground/20 px-2 py-1 text-xs hover:bg-foreground/5 disabled:opacity-50"
-                      onClick={() => addToSprint(s.id)}
-                      disabled={!activeSprint}
-                    >
-                      Adicionar à sprint
-                    </button>
-                    {s.points == null && (
-                      <button
-                        className="rounded-md border border-foreground/20 px-2 py-1 text-xs hover:bg-foreground/5"
-                        onClick={() => goToPoker(s)}
-                        title="Enviar para Planning Poker"
-                      >
-                        Votar no Poker
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </li>
-            ))}
-            {backlog.length === 0 && (
-              <li className="text-xs italic text-foreground/50">Backlog vazio</li>
-            )}
-          </ul>
-        </section>
-
-        {/* Sprint ativa */}
-        <section className="rounded-lg border border-foreground/10 bg-foreground/[0.02] p-4 transition-base">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold">Sprint atual</h2>
-              {!activeSprint ? (
-                <p className="text-xs text-foreground/60">Nenhuma sprint ativa.</p>
-              ) : (
-                <p className="text-xs text-foreground/60">
-                  {activeSprint.name} • {fmtDate(activeSprint.startDate)}
-                  {activeSprint.endDate ? ` → ${fmtDate(activeSprint.endDate)}` : ""}
-                  {" • "}
-                  pendentes: {todoCount}
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setStoryModalTarget("sprint")}
-                disabled={!activeSprint}
-                className="h-8 rounded-md border border-foreground/20 px-3 text-xs hover:bg-foreground/5 disabled:opacity-50"
-              >
-                Nova história
-              </button>
-            </div>
-          </div>
-
-          {!activeSprint ? (
-            <div className="text-xs text-foreground/60">
-              Inicie uma sprint para adicionar histórias.
-            </div>
-          ) : (
-            <ul className="grid gap-2">
-              {activeSprint.stories.map((s) => (
-                <li
-                  key={s.id}
-                  className="rounded-md border border-foreground/10 bg-background p-3 animate-pop transition-base overflow-hidden"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-xs text-foreground/50">{s.id}</div>
-                      <div className="text-sm font-medium break-words">{s.title}</div>
-                      {s.description && (
-                        <div className="mt-1 text-xs text-foreground/70 line-clamp-2 break-words">
-                          {s.description}
-                        </div>
-                      )}
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
-                        <Badge>{s.priority}</Badge>
-                        {s.points ? <Badge>{s.points} pts</Badge> : null}
-                        {s.tags?.map((t) => (
-                          <Badge key={t}>#{t}</Badge>
-                        ))}
-                        {s.assignees.length ? (
-                          <span className="text-foreground/60">• {s.assignees.join(", ")}</span>
-                        ) : null}
-                      </div>
-                      <div className="mt-3">
-                        <select
-                          value={s.status}
-                          onChange={(e) => updateStoryStatus(s.id, e.target.value as Status)}
-                          className="h-8 rounded-md border border-foreground/20 bg-background px-2 text-xs"
-                        >
-                          <option value="todo">A fazer</option>
-                          <option value="doing">Em progresso</option>
-                          <option value="done">Concluída</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <button
-                        className="rounded-md border border-foreground/20 px-2 py-1 text-xs hover:bg-foreground/5"
-                        onClick={() => removeFromSprint(s.id)}
-                      >
-                        Remover
-                      </button>
-                      {s.points == null && (
-                        <button
-                          className="rounded-md border border-foreground/20 px-2 py-1 text-xs hover:bg-foreground/5"
-                          onClick={() => goToPoker(s)}
-                          title="Enviar para Planning Poker"
-                        >
-                          Votar no Poker
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              ))}
-              {activeSprint.stories.length === 0 && (
-                <li className="text-xs italic text-foreground/50">
-                  Nenhuma história na sprint. Adicione do backlog.
-                </li>
-              )}
-            </ul>
-          )}
-        </section>
+      {/* Filtros */}
+      <div className="flex flex-wrap gap-3 rounded-lg border border-foreground/10 bg-background/50 p-3 text-[11px]">
+        <div className="flex flex-col gap-1">
+          <label className="font-medium">Prioridade</label>
+          <select
+            value={filterPriority}
+            onChange={(e) => setFilterPriority(e.target.value)}
+            className="h-8 rounded-md border border-foreground/20 bg-background px-2 text-xs"
+          >
+            <option value="all">Todas</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="font-medium">Pontos mín.</label>
+          <input
+            value={minPts}
+            onChange={(e) => setMinPts(e.target.value.replace(/[^0-9]/g, ""))}
+            placeholder=""
+            className="h-8 w-20 rounded-md border border-foreground/20 bg-background px-2 text-xs"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="font-medium">Pontos máx.</label>
+          <input
+            value={maxPts}
+            onChange={(e) => setMaxPts(e.target.value.replace(/[^0-9]/g, ""))}
+            placeholder=""
+            className="h-8 w-20 rounded-md border border-foreground/20 bg-background px-2 text-xs"
+          />
+        </div>
+        <div className="flex flex-col justify-end">
+          <button
+            onClick={() => { setFilterPriority("all"); setMinPts(""); setMaxPts(""); }}
+            className="h-8 rounded-md border border-foreground/20 px-3 text-xs hover:bg-foreground/5"
+          >
+            Limpar
+          </button>
+        </div>
+        <div className="ml-auto flex items-end text-[10px] text-foreground/50 italic">
+          {filteredBacklog.length} backlog / {filteredActiveStories.length} sprint
+        </div>
       </div>
 
-      {/* Histórico */}
-      <section className="rounded-lg border border-foreground/10 bg-foreground/[0.02] p-4 transition-base">
-        <h2 className="mb-3 text-sm font-semibold">Histórico de sprints</h2>
+      {loading && (
+        <div className="text-xs text-foreground/60">Carregando...</div>
+      )}
+      {error && <div className="text-xs text-red-600">{error}</div>}
+
+      {/* Backlog (filtrado) */}
+      <section className="grid gap-3">
+        <h2 className="text-sm font-semibold">Backlog ({filteredBacklog.length})</h2>
         <ul className="grid gap-2">
-          {history.map((s) => (
-            <li key={s.id} className="rounded-md border border-foreground/10 bg-background p-3 animate-slide-up transition-base">
-              <div className="flex items-center justify-between">
-                <div>
-                  <a href={`/sprints/${s.id}`} className="text-sm font-medium hover:underline">{s.name}</a> {/* link to details */}
-                  <div className="text-xs text-foreground/60">
-                    {fmtDate(s.startDate)} → {fmtDate(s.completedAt || s.endDate || s.startDate)} • concluídas: {s.stories.length}
-                  </div>
-                </div>
-                <div className="text-[10px]"><Badge>finalizada</Badge></div>
-              </div>
+          {filteredBacklog.map((st) => (
+            <li
+              key={st._id}
+              className="rounded-md border border-foreground/10 bg-background p-3 text-xs flex items-center justify-between gap-3"
+            >
+              <span
+                className="truncate font-medium cursor-pointer"
+                onClick={() => openEdit(st)}
+              >
+                {st.title}
+              </span>
+              {active && (
+                <button
+                  onClick={() => moveToSprint(st)}
+                  className="rounded-md border border-foreground/20 px-2 py-1 text-[10px] hover:bg-foreground/5"
+                >
+                  + Sprint
+                </button>
+              )}
             </li>
           ))}
-          {history.length === 0 && <li className="text-xs italic text-foreground/50">Sem sprints finalizadas.</li>}
+          {filteredBacklog.length === 0 && (
+            <li className="text-[11px] text-foreground/60">
+              Nenhuma história corresponde aos filtros.
+            </li>
+          )}
         </ul>
       </section>
 
-      {/* Modais */}
-      <StoryModal
-        open={!!storyModalTarget}
-        onClose={() => setStoryModalTarget(null)}
-        onSubmit={(data) => {
-          if (!storyModalTarget) return;
-          createStory(data, storyModalTarget);
-          setStoryModalTarget(null);
-        }}
-      />
-      <StartSprintModal
-        open={sprintModalOpen && isAdmin} // NEW: só abre se admin
-        onClose={() => setSprintModalOpen(false)}
-        onSubmit={(data) => {
-          if (!isAdmin) return; // NEW guard
-          startSprint(data);
-          setSprintModalOpen(false);
-        }}
-      />
+      {/* Active sprint (filtrada) */}
+      {active && (
+        <section className="grid gap-3">
+          <h2 className="text-sm font-semibold">Sprint ativa • {active.name}</h2>
+          <p className="text-[11px] text-foreground/60">
+            Concluídas: {doneCount}/{filteredActiveStories.length}
+          </p>
+          <ul className="grid gap-2">
+            {filteredActiveStories.map((st) => (
+              <li
+                key={st._id}
+                className="rounded-md border border-foreground/10 bg-background p-3 text-xs flex items-center justify-between gap-3"
+              >
+                <div
+                  className="min-w-0 flex-1 cursor-pointer"
+                  onClick={() => openEdit(st)}
+                >
+                  <div className="font-medium truncate">{st.title}</div>
+                  <div className="text-[10px] text-foreground/50">
+                    Status: {st.status}
+                    {st.points != null ? ` • ${st.points} pts` : ""}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {st.status !== "done" && (
+                    <button
+                      onClick={() => saveStatusQuick(st, "doing")}
+                      className="rounded-md border border-foreground/20 px-2 py-1 text-[10px] hover:bg-foreground/5"
+                    >
+                      Doing
+                    </button>
+                  )}
+                  {st.status !== "done" && (
+                    <button
+                      onClick={() => saveStatusQuick(st, "done")}
+                      className="rounded-md border border-foreground/20 px-2 py-1 text-[10px] hover:bg-foreground/5"
+                    >
+                      Done
+                    </button>
+                  )}
+                  <button
+                    onClick={() => moveToBacklog(st)}
+                    className="rounded-md border border-foreground/20 px-2 py-1 text-[10px] hover:bg-foreground/5"
+                    title="Mover para backlog"
+                  >
+                    ←
+                  </button>
+                </div>
+              </li>
+            ))}
+            {filteredActiveStories.length === 0 && (
+              <li className="text-[11px] text-foreground/60">
+                Nenhuma história na sprint corresponde aos filtros.
+              </li>
+            )}
+          </ul>
+        </section>
+      )}
+
+      {/* History */}
+      <section className="grid gap-3">
+        <h2 className="text-sm font-semibold">Histórico</h2>
+        <ul className="grid gap-2">
+          {history.map((sp) => (
+            <li
+              key={sp._id}
+              className="rounded-md border border-foreground/10 bg-background p-3 text-xs flex items-center justify-between"
+            >
+              <span className="truncate">{sp.name}</span>
+              <span className="text-[10px] text-foreground/50">
+                {sp.completedAt
+                  ? new Date(sp.completedAt).toLocaleDateString()
+                  : ""}
+              </span>
+            </li>
+          ))}
+          {history.length === 0 && (
+            <li className="text-[11px] text-foreground/60">
+              Sem sprints finalizadas.
+            </li>
+          )}
+        </ul>
+      </section>
+
+      {/* Modal criar sprint */}
+      {creatingSprint && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-lg border border-foreground/20 bg-background p-4 grid gap-3 text-sm">
+            <h3 className="font-semibold text-sm">Nova Sprint</h3>
+            <input
+              value={newSprintName}
+              onChange={(e) => setNewSprintName(e.target.value)}
+              placeholder="Nome"
+              className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm"
+            />
+            <textarea
+              value={newSprintGoal}
+              onChange={(e) => setNewSprintGoal(e.target.value)}
+              placeholder="Meta (opcional)"
+              className="min-h-20 rounded-md border border-foreground/20 bg-background p-2 text-sm"
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setCreatingSprint(false)}
+                className="h-8 rounded-md border border-foreground/20 px-3 text-xs hover:bg-foreground/5"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={createSprint}
+                disabled={!newSprintName.trim()}
+                className="h-8 rounded-md bg-foreground px-3 text-background text-xs font-medium disabled:opacity-40"
+              >
+                Criar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal criar história */}
+      {creatingStory && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-lg border border-foreground/20 bg-background p-4 grid gap-3 text-sm">
+            <h3 className="font-semibold text-sm">Nova História (Backlog)</h3>
+            <input
+              value={newStoryTitle}
+              onChange={(e) => setNewStoryTitle(e.target.value)}
+              placeholder="Título"
+              className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm"
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setCreatingStory(false)}
+                className="h-8 rounded-md border border-foreground/20 px-3 text-xs hover:bg-foreground/5"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={createStory}
+                disabled={!newStoryTitle.trim()}
+                className="h-8 rounded-md bg-foreground px-3 text-background text-xs font-medium disabled:opacity-40"
+              >
+                Criar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal editar história */}
+      {editingStory && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-lg border border-foreground/20 bg-background p-4 grid gap-3 text-sm">
+            <h3 className="font-semibold text-sm">Editar História</h3>
+            <div className="grid gap-2">
+              <div className="text-xs font-medium truncate">
+                {editingStory.title}
+              </div>
+              <label className="grid gap-1 text-[10px]">
+                Pontos
+                <input
+                  value={storyPoints}
+                  onChange={(e) =>
+                    setStoryPoints(e.target.value.replace(/[^0-9]/g, ""))
+                  }
+                  placeholder="ex.: 5"
+                  className="h-8 rounded-md border border-foreground/20 bg-background px-2 text-xs"
+                />
+              </label>
+              <label className="grid gap-1 text-[10px]">
+                Status
+                <select
+                  value={storyStatus}
+                  onChange={(e) => setStoryStatus(e.target.value as Status)}
+                  className="h-8 rounded-md border border-foreground/20 bg-background px-2 text-xs"
+                >
+                  <option value="todo">To Do</option>
+                  <option value="doing">Doing</option>
+                  <option value="done">Done</option>
+                </select>
+              </label>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setEditingStory(null)}
+                className="h-8 rounded-md border border-foreground/20 px-3 text-xs hover:bg-foreground/5"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={saveStoryEdits}
+                className="h-8 rounded-md bg-foreground px-3 text-background text-xs font-medium"
+              >
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
-}
 
-/* Helpers e componentes locais */
-
-function genId(prefix: string) {
-  return `${prefix}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-}
-
-function fmtDate(iso: string) {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString();
-  } catch {
-    return iso;
+  async function saveStatusQuick(story: Story, next: Status) {
+    if (!projectId) return;
+    await fetch(`/api/stories/${story._id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: next }),
+    });
+    await loadAll(projectId);
   }
-}
-
-function Badge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded bg-foreground/10 px-2 py-0.5">{children}</span>
-  );
-}
-
-/* Story modal */
-
-type StoryFormData = {
-  title: string;
-  description?: string;
-  assignees?: string;
-  priority?: "low" | "medium" | "high";
-  points?: string;
-  tags?: string;
-};
-
-function toStory(data: StoryFormData): Story {
-  return {
-    id: genId("US"),
-    title: data.title.trim(),
-    description: data.description?.trim() || "",
-    assignees: splitCsv(data.assignees),
-    priority: data.priority || "medium",
-    points: data.points ? Number(data.points) : undefined,
-    tags: splitCsv(data.tags),
-    createdAt: new Date().toISOString(),
-    status: "todo",
-  };
-}
-
-function splitCsv(v?: string) {
-  return v
-    ? v
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean)
-    : [];
-}
-
-function StoryModal({
-  open,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSubmit: (data: StoryFormData) => void;
-}) {
-  const [form, setForm] = useState<StoryFormData>({
-    title: "",
-    priority: "medium",
-    points: "",
-  });
-
-  if (!open) return null;
-
-  function submit() {
-    if (!form.title?.trim()) return;
-    onSubmit(form);
-    setForm({ title: "", priority: "medium", points: "" });
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-lg border border-foreground/10 bg-background p-4 shadow-xl">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Nova história</h3>
-          <button
-            className="rounded-md border border-foreground/20 px-2 py-1 text-xs hover:bg-foreground/5"
-            onClick={onClose}
-          >
-            Fechar
-          </button>
-        </div>
-
-        <div className="grid gap-3">
-          <label className="grid gap-1 text-xs">
-            <span>Título</span>
-            <input
-              value={form.title}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-              className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm"
-              placeholder="Ex.: Implementar login"
-            />
-          </label>
-
-          <label className="grid gap-1 text-xs">
-            <span>Descrição</span>
-            <textarea
-              value={form.description || ""}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              className="min-h-24 rounded-md border border-foreground/20 bg-background p-3 text-sm"
-              placeholder="Detalhes, critérios de aceite, etc."
-            />
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="grid gap-1 text-xs">
-              <span>Prioridade</span>
-              <select
-                value={form.priority}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, priority: e.target.value as StoryFormData["priority"] }))
-                }
-                className="h-9 rounded-md border border-foreground/20 bg-background px-2 text-sm"
-              >
-                <option value="low">Baixa</option>
-                <option value="medium">Média</option>
-                <option value="high">Alta</option>
-              </select>
-            </label>
-
-            <label className="grid gap-1 text-xs">
-              <span>Pontos</span>
-              <select
-                value={form.points}
-                onChange={(e) => setForm((f) => ({ ...f, points: e.target.value }))}
-                className="h-9 rounded-md border border-foreground/20 bg-background px-2 text-sm"
-              >
-                <option value="">—</option>
-                {[0, 1, 2, 3, 5, 8, 13, 21].map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <label className="grid gap-1 text-xs">
-            <span>Responsáveis (separe por vírgula)</span>
-            <input
-              value={form.assignees || ""}
-              onChange={(e) => setForm((f) => ({ ...f, assignees: e.target.value }))}
-              className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm"
-              placeholder="Ex.: Ana, Bruno"
-            />
-          </label>
-
-          <label className="grid gap-1 text-xs">
-            <span>Tags (separe por vírgula)</span>
-            <input
-              value={form.tags || ""}
-              onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))}
-              className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm"
-              placeholder="Ex.: auth, backend"
-            />
-          </label>
-        </div>
-
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-foreground/5"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={submit}
-            className="h-9 rounded-md bg-foreground px-3 text-background text-sm font-medium hover:opacity-90"
-          >
-            Criar
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* Start sprint modal */
-
-type SprintFormData = {
-  name: string;
-  goal?: string;
-  startDate?: string;
-  endDate?: string;
-};
-
-function StartSprintModal({
-  open,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSubmit: (data: SprintFormData) => void;
-}) {
-  const [form, setForm] = useState<SprintFormData>({
-    name: "",
-    goal: "",
-    startDate: new Date().toISOString().slice(0, 10),
-    endDate: "",
-  });
-
-  if (!open) return null;
-
-  function submit() {
-    if (!form.name.trim()) return;
-    onSubmit(form);
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-lg border border-foreground/10 bg-background p-4 shadow-xl">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Iniciar sprint</h3>
-          <button
-            className="rounded-md border border-foreground/20 px-2 py-1 text-xs hover:bg-foreground/5"
-            onClick={onClose}
-          >
-            Fechar
-          </button>
-        </div>
-
-        <div className="grid gap-3">
-          <label className="grid gap-1 text-xs">
-            <span>Nome</span>
-            <input
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm"
-              placeholder="Ex.: Sprint 1"
-            />
-          </label>
-
-          <label className="grid gap-1 text-xs">
-            <span>Objetivo</span>
-            <input
-              value={form.goal}
-              onChange={(e) => setForm((f) => ({ ...f, goal: e.target.value }))}
-              className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm"
-              placeholder="Ex.: Entregar MVP de autenticação"
-            />
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="grid gap-1 text-xs">
-              <span>Início</span>
-              <input
-                type="date"
-                value={form.startDate}
-                onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
-                className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm"
-              />
-            </label>
-            <label className="grid gap-1 text-xs">
-              <span>Fim (opcional)</span>
-              <input
-                type="date"
-                value={form.endDate}
-                onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))}
-                className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm"
-              />
-            </label>
-          </div>
-        </div>
-
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-foreground/5"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={submit}
-            className="h-9 rounded-md bg-foreground px-3 text-background text-sm font-medium hover:opacity-90"
-          >
-            Iniciar
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* Dados de exemplo */
-
-function sampleStory(title: string, opts?: Partial<Story>) {
-  const base: Story = {
-    id: genId("US"),
-    title,
-    description: "",
-    assignees: [],
-    priority: "medium",
-    points: undefined,
-    tags: [],
-    createdAt: new Date().toISOString(),
-    status: "todo",
-  };
-  return { ...base, ...opts };
-}
-
-// NEW: sanitizers and dedupe
-function dedupeById<T extends { id: string }>(arr: T[]): T[] {
-  const seen = new Set<string>();
-  const out: T[] = [];
-  for (const item of arr) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    out.push(item);
-  }
-  return out;
-}
-function sanitizeStories(stories: Story[] | null | undefined): Story[] {
-  if (!Array.isArray(stories)) return [];
-  return dedupeById(stories);
-}
-function sanitizeSprint(s: Sprint | null | undefined): Sprint | null {
-  if (!s) return null;
-  return { ...s, stories: sanitizeStories(s.stories) };
-}
-
-// Normalize history (remove nulls, dedupe and sanitize stories)
-function sanitizeHistory(sprints: Sprint[] | null | undefined): Sprint[] {
-  if (!Array.isArray(sprints)) return [];
-  const cleaned = sprints
-    .map(sanitizeSprint)
-    .filter((s): s is Sprint => s !== null);
-  return dedupeById(cleaned);
 }

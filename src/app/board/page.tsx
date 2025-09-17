@@ -1,261 +1,223 @@
 "use client";
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 
-import { useEffect, useMemo, useState } from "react";
-
-type Status = "todo" | "doing" | "done";
-type Story = {
-  id: string;
+interface BoardItem {
+  _id: string;
   title: string;
-  description?: string;
-  assignees: string[];
-  priority: "low" | "medium" | "high";
-  points?: number;
-  tags?: string[];
-  createdAt: string;
-  status: Status;
-  history?: { status: Status; at: string }[]; // <— timeline
-};
-type Sprint = {
-  id: string;
-  name: string;
-  goal?: string;
-  startDate: string;
-  endDate?: string;
-  stories: Story[];
-  status: "active" | "completed";
-  completedAt?: string;
-};
-
-const statusLabel: Record<Status, string> = {
-  todo: "A fazer",
-  doing: "Em progresso",
-  done: "Concluído",
-};
-
-// Helper to generate unique IDs for stories
-function genId(prefix: string) {
-  return `${prefix}-${Math.random().toString(36).substr(2, 9)}`;
+  status: string;
+  order: number;
+  projectId: string;
+  storyId?: string;
+  _story?: { title: string; points?: number; status?: string };
 }
-
-const LS_ACTIVE_SPRINT = "wm_active_sprint_v1";
+const STATUSES = ["backlog", "todo", "doing", "done"] as const;
+const LS_SELECTED_PROJECT = "wm_selected_project_v1";
 
 export default function BoardPage() {
-  const [sprint, setSprint] = useState<Sprint | null>(null);
-  const [title, setTitle] = useState("");
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<Status | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { data: session } = useSession();
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [items, setItems] = useState<BoardItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newTitle, setNewTitle] = useState("");
+  const [newStatus, setNewStatus] = useState<string>("backlog");
+  const [storyId, setStoryId] = useState("");
+  const [dragging, setDragging] = useState<BoardItem | null>(null);
 
-  // load active sprint
   useEffect(() => {
     try {
-      const a = localStorage.getItem(LS_ACTIVE_SPRINT);
-      if (a) setSprint(JSON.parse(a));
-    } catch {
-      /* ignore */
-    }
+      setProjectId(localStorage.getItem(LS_SELECTED_PROJECT));
+    } catch {}
   }, []);
-
-  // NEW: listen to changes from other pages/tabs
   useEffect(() => {
-    function onStorage(e: StorageEvent) {
-      if (e.key === LS_ACTIVE_SPRINT) {
-        try {
-          setSprint(e.newValue ? JSON.parse(e.newValue) : null);
-        } catch {
-          /* ignore */
-        }
-      }
+    if (projectId) load();
+  }, [projectId]);
+
+  async function load() {
+    if (!projectId) return;
+    setLoading(true);
+    const res = await fetch(`/api/projects/${projectId}/board`, { cache: "no-store" });
+    if (res.ok) setItems(await res.json());
+    setLoading(false);
+  }
+
+  async function createItem() {
+    if (!projectId) return;
+    if (!newTitle.trim() && !storyId.trim()) return;
+    const res = await fetch(`/api/projects/${projectId}/board`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: newTitle.trim(), status: newStatus, storyId: storyId.trim() || undefined }),
+    });
+    if (res.ok) {
+      setNewTitle("");
+      setStoryId("");
+      await load();
     }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
-  // persist active sprint
-  function persist(next: Sprint | null) {
-    setSprint(next);
-    try {
-      localStorage.setItem(LS_ACTIVE_SPRINT, JSON.stringify(next));
-    } catch {
-      /* ignore */
-    }
   }
 
-  const grouped = useMemo(() => {
-    const base: Record<Status, Story[]> = { todo: [], doing: [], done: [] };
-    if (!sprint) return base;
-    for (const s of sprint.stories) base[s.status].push(s);
-    return base;
-  }, [sprint]);
-
-  function addStory() {
-    if (!sprint || !title.trim()) return;
-    const now = new Date().toISOString();
-    const story: Story = {
-      id: genId("NXS"),
-      title: title.trim(),
-      createdAt: now,
-      status: "todo",
-      description: "",
-      assignees: [],
-      priority: "medium",
-      tags: [],
-      points: undefined,
-      history: [{ status: "todo", at: now }], // initial status event
-    };
-    const next: Sprint = { ...sprint, stories: [story, ...sprint.stories] };
-    setTitle("");
-    persist(next);
+  function byStatus(s: string) {
+    return items.filter((i) => i.status === s).sort((a, b) => a.order - b.order);
   }
 
-  function deleteStory(id: string) {
-    if (!sprint) return;
-    setDeletingId(id);
-    setTimeout(() => {
-      const next: Sprint = { ...sprint, stories: sprint.stories.filter((x) => x.id !== id) };
-      setDeletingId(null);
-      persist(next);
-    }, 150); // matches .animate-fade-out timing
+  async function reorder(status: string, list: BoardItem[]) {
+    if (!projectId) return;
+    setItems((prev) => [...prev.filter((i) => i.status !== status), ...list]);
+    await fetch(`/api/board/reorder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, status, orderedIds: list.map((i) => i._id) }),
+    });
+    await load();
   }
 
-  function moveStory(id: string, to: Status) {
-    if (!sprint) return;
-    const now = new Date().toISOString();
-    const next: Sprint = {
-      ...sprint,
-      stories: sprint.stories.map((s) => {
-        if (s.id !== id) return s;
-        if (s.status === to) return s;
-        const hist = (s.history ?? []).slice();
-        const last = hist[hist.length - 1];
-        if (!last || last.status !== to) hist.push({ status: to, at: now }); // append status change to history
-        return { ...s, status: to, history: hist };
-      }),
-    };
-    persist(next);
-  }
-
-  function onDragStart(e: React.DragEvent, id: string) {
-    setDraggingId(id);
-    e.dataTransfer.setData("text/plain", id);
+  function onDragStart(e: React.DragEvent, item: BoardItem) {
+    setDragging(item);
     e.dataTransfer.effectAllowed = "move";
   }
-  function onDragEnd() {
-    setDraggingId(null);
-    setDropTarget(null);
-  }
-  function onDragOverColumn(e: React.DragEvent, status: Status) {
+  function onDragOver(e: React.DragEvent) {
     e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (dropTarget !== status) setDropTarget(status);
   }
-  function onDropColumn(e: React.DragEvent, status: Status) {
+  async function onDrop(e: React.DragEvent, status: string) {
     e.preventDefault();
-    const id = e.dataTransfer.getData("text/plain") || draggingId;
-    if (id) moveStory(id, status);
-    setDropTarget(null);
-    setDraggingId(null);
+    if (!dragging) return;
+    if (dragging.status === status) {
+      setDragging(null);
+      return;
+    }
+    // Atualiza status no servidor (que sincroniza story se existir)
+    await fetch(`/api/board/${dragging._id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    setDragging(null);
+    await load();
   }
 
-  if (!sprint || sprint.status !== "active") {
+  async function detachStory(item: BoardItem) {
+    await fetch(`/api/board/${item._id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ detachStory: true }),
+    });
+    await load();
+  }
+
+  async function deleteItem(item: BoardItem) {
+    await fetch(`/api/board/${item._id}`, { method: "DELETE" });
+    await load();
+  }
+
+  if (!projectId) {
     return (
-      <section className="grid place-items-center gap-4 py-16">
-        <div className="text-center animate-fade-in">
-          <h2 className="text-xl font-semibold">Nenhuma sprint ativa</h2>
-          <p className="mt-1 text-sm text-foreground/60">
-            Inicie uma sprint em “Sprints” para visualizar o Kanban.
-          </p>
-          <a
-            href="/sprints"
-            className="mt-4 inline-block rounded-md bg-foreground px-4 py-2 text-background text-sm font-medium hover:opacity-90 transition-base"
-          >
-            Ir para Sprints
-          </a>
-        </div>
-      </section>
+      <div className="p-6 text-sm">
+        Selecione um projeto primeiro em{" "}
+        <a className="underline" href="/projects">
+          Projetos
+        </a>
+        .
+      </div>
     );
   }
 
   return (
-    <section className="grid gap-6">
-      <header className="flex flex-wrap items-end justify-between gap-3 animate-slide-up">
+    <div className="grid gap-6">
+      <header className="flex flex-wrap items-end gap-4">
         <div>
-          <h2 className="text-2xl font-semibold">Quadro Kanban • {sprint.name}</h2>
-          <p className="text-xs text-foreground/60">
-            Arraste os cards entre as colunas. Tudo aqui reflete a sprint ativa.
-          </p>
+          <h1 className="text-2xl font-semibold">Board</h1>
+          <p className="text-xs text-foreground/60">Kanban integrado às histórias (link opcional).</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Nova história..."
-            className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm transition-base focus:border-foreground/40"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="Título do card"
+            className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm"
           />
-          <button
-            onClick={addStory}
-            className="h-9 rounded-md bg-foreground px-3 text-background text-sm font-medium hover:opacity-90 active:scale-[.98] transition-base"
+          <input
+            value={storyId}
+            onChange={(e) => setStoryId(e.target.value)}
+            placeholder="Story ID (opcional)"
+            className="h-9 w-40 rounded-md border border-foreground/20 bg-background px-3 text-sm"
+          />
+          <select
+            value={newStatus}
+            onChange={(e) => setNewStatus(e.target.value)}
+            className="h-9 rounded-md border border-foreground/20 bg-background px-2 text-sm"
           >
-            Adicionar
+            {STATUSES.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
+          <button
+            onClick={createItem}
+            className="h-9 rounded-md bg-foreground px-3 text-background text-sm font-medium hover:opacity-90"
+          >
+            Criar
           </button>
         </div>
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        {(Object.keys(grouped) as Status[]).map((status) => (
-          <div
-            key={status}
-            onDragOver={(e) => onDragOverColumn(e, status)}
-            onDrop={(e) => onDropColumn(e, status)}
-            onDragLeave={() => setDropTarget((s) => (s === status ? null : s))}
-            className={`rounded-lg border p-3 transition-base ${
-              dropTarget === status
-                ? "border-foreground/40 bg-foreground/[0.06]"
-                : "border-foreground/10 bg-foreground/[0.02]"
-            }`}
-          >
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">{statusLabel[status]}</h3>
-              <span className="text-[10px] rounded bg-foreground/10 px-2 py-0.5">
-                {grouped[status].length}
-              </span>
-            </div>
-            <div className="grid gap-2 min-h-8">
-              {grouped[status].map((t) => (
-                <article
-                  key={t.id}
-                  draggable
-                  onDragStart={(e) => onDragStart(e, t.id)}
-                  onDragEnd={onDragEnd}
-                  className={`rounded-md border bg-background p-3 shadow-sm transition-base animate-pop overflow-hidden ${
-                    draggingId === t.id ? "opacity-70 rotate-1 scale-[1.01]" : ""
-                  } ${deletingId === t.id ? "animate-fade-out" : ""} border-foreground/10`}
-                >
-                  <div className="min-w-0">
-                    <div className="text-xs text-foreground/50">{t.id}</div>
-                    <div className="text-sm break-words">{t.title}</div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
-                      <span className="rounded bg-foreground/10 px-2 py-0.5">{t.priority}</span>
-                      {t.points ? (
-                        <span className="rounded bg-foreground/10 px-2 py-0.5">{t.points} pts</span>
-                      ) : null}
-                      {t.tags?.map((tag) => (
-                        <span key={tag} className="rounded bg-foreground/10 px-2 py-0.5">
-                          #{tag}
-                        </span>
-                      ))}
+      {loading && <div className="text-xs text-foreground/60">Carregando...</div>}
+
+      <div className="grid gap-4 md:grid-cols-4">
+        {STATUSES.map((status) => {
+          const col = byStatus(status);
+          return (
+            <div
+              key={status}
+              className="rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3 flex flex-col gap-2 min-h-[320px]"
+              onDragOver={onDragOver}
+              onDrop={(e) => onDrop(e, status)}
+            >
+              <div className="text-xs font-semibold uppercase tracking-wide flex items-center justify-between">
+                <span>{status}</span>
+                <span className="text-[10px] font-normal text-foreground/50">{col.length}</span>
+              </div>
+              <div className="flex-1 flex flex-col gap-2">
+                {col.map((item) => (
+                  <div
+                    key={item._id}
+                    draggable
+                    onDragStart={(e) => onDragStart(e, item)}
+                    className={`group rounded-md border border-foreground/10 bg-background p-2 text-xs shadow-sm flex flex-col gap-1 ${
+                      dragging?._id === item._id ? "opacity-50" : ""
+                    }`}
+                  >
+                    <div className="font-medium truncate">{item.title}</div>
+                    {item._story && (
+                      <div className="text-[10px] text-foreground/60 flex items-center gap-2">
+                        <span>Status story: {item._story.status}</span>
+                        {item._story.points != null && <span>{item._story.points} pts</span>}
+                      </div>
+                    )}
+                    <div className="mt-1 hidden group-hover:flex gap-2">
+                      {item.storyId && (
+                        <button
+                          onClick={() => detachStory(item)}
+                          className="rounded-md border border-foreground/20 px-2 py-0.5 text-[10px] hover:bg-foreground/5"
+                          title="Desvincular story"
+                        >
+                          Unlink
+                        </button>
+                      )}
+                      <button
+                        onClick={() => deleteItem(item)}
+                        className="rounded-md border border-red-400/40 px-2 py-0.5 text-[10px] hover:bg-red-500/10 text-red-600"
+                        title="Excluir"
+                      >
+                        Del
+                      </button>
                     </div>
                   </div>
-                  {/* Buttons removed (removal only in Sprint management) */}
-                </article>
-              ))}
-              {grouped[status].length === 0 && (
-                <div className="text-xs text-foreground/40 italic p-2">Solte cards aqui</div>
-              )}
+                ))}
+                {col.length === 0 && <div className="text-[10px] text-foreground/40 italic">Vazio</div>}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
-    </section>
+    </div>
   );
 }

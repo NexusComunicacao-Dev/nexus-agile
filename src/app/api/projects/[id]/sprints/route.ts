@@ -48,6 +48,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   const wantActive = searchParams.get("active");
 
   const activeSprint = await sprints.findOne({ projectId, status: "active" });
+  const activeStories = activeSprint
+    ? await stories.find({ projectId, sprintId: activeSprint._id }).sort({ createdAt: -1 }).toArray()
+    : [];
   const backlog = await stories
     .find({ projectId, $or: [{ sprintId: null }, { sprintId: { $exists: false } }] })
     .sort({ createdAt: -1 })
@@ -58,5 +61,5 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     .limit(25)
     .toArray() : [];
 
-  return NextResponse.json({ activeSprint, backlog, history });
+  return NextResponse.json({ activeSprint, activeStories, backlog, history });
 }
