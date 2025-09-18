@@ -2,11 +2,22 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-auth";
 import { collections } from "@/lib/db";
 
-export async function GET(_: Request, { params }: { params: { sessionId: string } }) {
+// NEW helper para lidar com params possivelmente async
+async function resolveParams(p: any): Promise<{ sessionId: string }> {
+  return typeof p?.then === "function" ? await p : p;
+}
+
+export async function GET(
+  req: Request,
+  ctx: { params: { sessionId: string } } | { params: Promise<{ sessionId: string }> }
+) {
   const { userId, error } = await requireUser();
   if (error) return error;
+
+  const { sessionId } = await resolveParams((ctx as any).params); // NEW
+
   const { pokerSessions, pokerVotes, projects } = await collections();
-  const session = await pokerSessions.findOne({ _id: params.sessionId });
+  const session = await pokerSessions.findOne({ _id: sessionId });
   if (!session) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const proj = await projects.findOne({ _id: session.projectId, memberIds: userId! });
   if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -38,10 +49,11 @@ export async function PATCH(req: Request, { params }: { params: { sessionId: str
   if (body.action === "reveal") {
     if (session.ownerId !== userId) return NextResponse.json({ error: "Only owner can reveal" }, { status: 403 });
     const votes = await pokerVotes.find({ sessionId: session._id }).toArray();
-    const numeric = votes.map(v => v.value).filter(v => typeof v === "number") as number[];
+    const numeric = votes.map((v: { value: unknown }) => v.value).filter((v: unknown) => typeof v === "number") as number[];
     const consensus = numeric.length ? Math.round(numeric.reduce((a,b)=>a+b,0)/numeric.length) : undefined;
     await pokerSessions.updateOne({ _id: session._id }, { $set: { status: "revealed", revealedAt: new Date().toISOString(), consensusPoints: consensus } });
-    // opcional: atualizar story points
+
+    
     if (consensus != null && session.storyId) {
       await stories.updateOne({ _id: session.storyId }, { $set: { points: consensus } });
     }

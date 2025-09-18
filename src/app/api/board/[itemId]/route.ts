@@ -6,7 +6,7 @@ export async function PATCH(req: Request, { params }: { params: { itemId: string
   const { userId, error } = await requireUser();
   if (error) return error;
   const body = await req.json().catch(() => ({}));
-  const { board, projects, stories } = await collections();
+  const { sprints: board, projects, stories } = await collections();
   const item = await board.findOne({ _id: params.itemId });
   if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const proj = await projects.findOne({ _id: item.projectId, memberIds: userId! });
@@ -42,7 +42,7 @@ export async function PATCH(req: Request, { params }: { params: { itemId: string
 export async function DELETE(_: Request, { params }: { params: { itemId: string } }) {
   const { userId, error } = await requireUser();
   if (error) return error;
-  const { board, projects } = await collections();
+  const { sprints: board, projects } = await collections();
   const item = await board.findOne({ _id: params.itemId });
   if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const proj = await projects.findOne({ _id: item.projectId, memberIds: userId! });

@@ -3,9 +3,16 @@ import { collections } from "@/lib/db";
 import { requireUser } from "@/lib/require-auth";
 import type { Sprint } from "@/lib/types";
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+// Helper para lidar com params possivelmente async
+async function resolveParams(p: any): Promise<{ id: string }> {
+  return typeof p?.then === "function" ? await p : p;
+}
+
+export async function POST(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
   const { userId, error } = await requireUser();
   if (error) return error;
+
+  const { id: projectId } = await resolveParams((ctx as any).params);
 
   const body = await req.json().catch(() => ({}));
   const name = String(body?.name || "").trim();
@@ -16,12 +23,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
 
   const { projects, sprints } = await collections();
-  const proj = await projects.findOne({ _id: params.id, memberIds: userId! });
+  const proj = await projects.findOne({ _id: projectId, memberIds: userId! });
   if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const sprint: Sprint = {
     _id: crypto.randomUUID(),
-    projectId: params.id,
+    projectId,
     name,
     goal,
     startDate,
@@ -35,10 +42,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   return NextResponse.json(sprint, { status: 201 });
 }
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
   const { userId, error } = await requireUser();
   if (error) return error;
-  const projectId = params.id;
+
+  const { id: projectId } = await resolveParams((ctx as any).params);
   const { sprints, projects, stories } = await collections();
 
   const proj = await projects.findOne({ _id: projectId, memberIds: userId! });

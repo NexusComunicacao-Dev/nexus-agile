@@ -9,29 +9,39 @@ export async function collections() {
   const projects = db.collection("projects");
   const sprints = db.collection("sprints");
   const stories = db.collection("stories");
-  const board = db.collection("board_items") as any as import("mongodb").Collection<BoardItem>;
-  const pokerSessions = db.collection("poker_sessions") as any as import("mongodb").Collection<PokerSession>;
-  const pokerVotes = db.collection("poker_votes") as any as import("mongodb").Collection<PokerVote>;
+  const pokerSessions = db.collection("poker_sessions");
+  const pokerVotes = db.collection("poker_votes");
 
   if (!indexesEnsured) {
-    await Promise.all([
-      projects.createIndex({ ownerId: 1 }),
-      projects.createIndex({ memberIds: 1 }),
-      projects.createIndex({ key: 1 }, { unique: true }),
-      sprints.createIndex({ projectId: 1 }),
-      sprints.createIndex({ status: 1 }),
-      stories.createIndex({ projectId: 1 }),
-      stories.createIndex({ sprintId: 1 }),
-      stories.createIndex({ status: 1 }),
-      board.createIndex({ projectId: 1, status: 1, order: 1 }),
-      board.createIndex({ storyId: 1 }),
-      pokerSessions.createIndex({ projectId: 1, status: 1, createdAt: -1 }),
-      pokerSessions.createIndex({ storyId: 1 }),
-      pokerVotes.createIndex({ sessionId: 1, userId: 1 }, { unique: true }),
-    ]).catch(() => {});
+    try {
+      await Promise.all([
+        projects.createIndex({ ownerId: 1 }),
+        projects.createIndex({ memberIds: 1 }),
+        projects.createIndex({ key: 1 }, { unique: true }),
+        sprints.createIndex({ projectId: 1 }),
+        sprints.createIndex({ status: 1 }),
+        stories.createIndex({ projectId: 1 }),
+        stories.createIndex({ sprintId: 1 }),
+        stories.createIndex({ status: 1 }),
+      ]).catch(() => {});
+      // Ajuste de índice de votos: remover antigo se existir
+      const voteIndexes = await pokerVotes.indexes().catch(() => []);
+      const legacy = voteIndexes.find((i: any) => i.name === "sessionId_1_userId_1");
+      if (legacy) {
+        await pokerVotes.dropIndex("sessionId_1_userId_1").catch(() => {});
+      }
+      await pokerSessions.createIndex({ projectId: 1, status: 1 }).catch(() => {});
+      await pokerVotes.createIndex({ sessionId: 1, storyId: 1 }).catch(() => {});
+      await pokerVotes.createIndex(
+        { sessionId: 1, userId: 1, storyId: 1 },
+        { unique: true }
+      ).catch(() => {});
+    } catch {
+      // ignora falhas de índice
+    }
     indexesEnsured = true;
   }
-  return { db, projects, sprints, stories, board, pokerSessions, pokerVotes };
+  return { db, projects, sprints, stories, pokerSessions, pokerVotes, boards: db.collection("boards") };
 }
 
 export function toId(v: any): string {

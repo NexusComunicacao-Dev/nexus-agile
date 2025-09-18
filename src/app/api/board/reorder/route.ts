@@ -11,14 +11,14 @@ export async function POST(req: Request) {
   const status = String(body?.status || "").trim();
   const orderedIds: string[] = Array.isArray(body?.orderedIds) ? body.orderedIds : [];
   if (!projectId || !status || !orderedIds.length) return NextResponse.json({ error: "invalid payload" }, { status: 400 });
-  const { projects, board } = await collections();
+  const { projects, boards } = await collections();
   const proj = await projects.findOne({ _id: projectId, memberIds: userId! });
   if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const bulk = board.initializeUnorderedBulkOp();
+  const bulk = boards.initializeUnorderedBulkOp();
   orderedIds.forEach((id, idx) => {
     bulk.find({ _id: id, projectId, status }).update({ $set: { order: idx, updatedAt: new Date().toISOString() } });
   });
   try { await bulk.execute(); } catch { /* ignore */ }
-  const items = await board.find({ projectId, status: status as BoardStatus }).sort({ order: 1 }).toArray();
+  const items = await boards.find({ projectId, status: status as BoardStatus }).sort({ order: 1 }).toArray();
   return NextResponse.json(items);
 }

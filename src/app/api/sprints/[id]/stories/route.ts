@@ -1,53 +1,53 @@
 import { NextResponse } from "next/server";
-import { collections } from "@/lib/db";
 import { requireUser } from "@/lib/require-auth";
+import { collections } from "@/lib/db";
 import type { Story } from "@/lib/types";
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+// NEW: helper para lidar com params possivelmente async
+async function resolveParams(p: any): Promise<{ id: string }> {
+  return typeof p?.then === "function" ? await p : p;
+}
+
+export async function POST(
+  req: Request,
+  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+) {
   const { userId, error } = await requireUser();
   if (error) return error;
-  const sprintId = params.id;
+
+  const { id: sprintId } = await resolveParams((ctx as any).params); // NEW
+
   const body = await req.json().catch(() => ({}));
   const title = String(body?.title || "").trim();
   if (!title) return NextResponse.json({ error: "title is required" }, { status: 400 });
 
-  const description = String(body?.description || "").trim() || undefined;
-  const assignees = Array.isArray(body?.assignees) ? body.assignees : [];
-  const priority = (body?.priority || "medium") as Story["priority"];
-  const points = body?.points != null ? Number(body.points) : undefined;
-  const tags = Array.isArray(body?.tags) ? body.tags : [];
+  const description =
+    typeof body?.description === "string" && body.description.trim()
+      ? body.description.trim()
+      : undefined;
 
-  const { sprints, projects, stories } = await collections();
+  const { sprints, stories } = await collections();
 
-  let projectId: string | null = null;
-  if (sprintId === "backlog") {
-    projectId = String(body?.projectId || "").trim();
-  } else {
-    const sprint = await sprints.findOne({ _id: sprintId });
-    if (!sprint) return NextResponse.json({ error: "Sprint not found" }, { status: 404 });
-    projectId = sprint.projectId;
-  }
-  if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
-
-  const proj = await projects.findOne({ _id: projectId, memberIds: userId! });
-  if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const sprint = await sprints.findOne({ _id: sprintId, projectId: body.projectId, status: "active" });
+  if (!sprint) return NextResponse.json({ error: "sprint not found or inactive" }, { status: 404 });
 
   const now = new Date().toISOString();
-  const story: Story = {
+  const doc = {
     _id: crypto.randomUUID(),
-    projectId,
-    sprintId: sprintId === "backlog" ? undefined as any : sprintId,
+    projectId: sprint.projectId,
+    sprintId,
     title,
-    description,
-    assignees,
-    priority,
-    points,
-    tags,
+    description, // mantém se fornecida
     status: "todo",
     createdAt: now,
-    history: [{ status: "todo", at: now }],
+    history: [{ at: now, status: "todo" }],
   };
-
-  await stories.insertOne(story as any);
-  return NextResponse.json(story, { status: 201 });
+  await stories.insertOne(doc as any);
+  return NextResponse.json(doc, { status: 201 });
 }
+
+// Caso existam outros handlers (GET / DELETE / etc.), aplicar o mesmo padrão:
+// export async function GET(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
+//   const { id } = await resolveParams((ctx as any).params);
+//   // ...existing code...
+// }

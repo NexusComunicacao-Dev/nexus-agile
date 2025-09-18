@@ -8,7 +8,7 @@ export default function NavClient() {
   return (
     <div className="flex gap-4">
       <a href="/projects" className="hover:underline">Projetos</a>
-      <a href="/board" className="hover:underline">Kanban</a>
+      <a href="/board" className="hover:underline">Board</a>
       <a href="/poker" className="hover:underline">Planning Poker</a>
       <a href="/sprints" className="hover:underline">Sprints</a>
       {isAdmin && <a href="/admin" className="hover:underline text-foreground/90">Admin</a>}

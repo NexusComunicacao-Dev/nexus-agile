@@ -30,7 +30,7 @@ export default function Home() {
             <li>
               • Arraste histórias entre colunas no{" "}
               <a className="underline hover:opacity-80" href="/board">
-                Kanban
+                Board
               </a>
               .
             </li>
@@ -54,7 +54,7 @@ export default function Home() {
               href="/board"
               className="rounded-md border border-foreground/20 px-4 py-2 text-sm hover:bg-foreground/5"
             >
-              Abrir Kanban
+              Abrir Board
             </a>
             <a
               href="/poker"

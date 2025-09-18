@@ -177,6 +177,14 @@ export default function ProjectsPage() {
                       <button onClick={() => openSprints(p)} className="rounded-md border border-foreground/20 px-2 py-1 text-xs hover:bg-foreground/5">
                         Abrir Sprints
                       </button>
+                      {(isAdmin || p.ownerId === meId) && (
+                        <a
+                          href={`/projects/${p._id}/settings`}
+                          className="rounded-md border border-foreground/20 px-2 py-1 text-xs hover:bg-foreground/5"
+                        >
+                          Config
+                        </a>
+                      )}
                     </div>
                   </div>
                 </li>

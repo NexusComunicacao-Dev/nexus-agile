@@ -3,10 +3,11 @@ import { collections } from "@/lib/db";
 import { requireUser } from "@/lib/require-auth";
 import clientPromise from "@/lib/mongodb";
 import { sendMail } from "@/lib/mailer";
+import { ObjectId } from "mongodb";
 
 // Helper para resolver params (compatível com Next que pode entregar Promise)
 async function resolveParams(p: any): Promise<{ id: string }> {
-  return typeof p?.then === "function" ? p : p;
+  return typeof p?.then === "function" ? await p : p; // FIX: agora aguarda
 }
 
 export async function POST(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
@@ -85,7 +86,10 @@ export async function POST(req: Request, ctx: { params: { id: string } } | { par
   return NextResponse.json(updated);
 }
 
-export async function DELETE(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
+export async function DELETE(
+  req: Request,
+  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+) {
   const { userId, error } = await requireUser();
   if (error) return error;
 
@@ -95,11 +99,95 @@ export async function DELETE(req: Request, ctx: { params: { id: string } } | { p
   const memberId = String(searchParams.get("memberId") || "");
   if (!memberId) return NextResponse.json({ error: "memberId is required" }, { status: 400 });
 
-  const { projects } = await collections();
+  const { projects, db } = await collections(); // UPDATED para ter db
   const proj = await projects.findOne({ _id: id, ownerId: userId! });
   if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  // NEW: capturar dados do usuário antes de remover
+  const usersCol = db.collection("users");
+  let removedUser: any = await usersCol.findOne({ _id: memberId });
+  if (!removedUser) {
+    try {
+      removedUser = await usersCol.findOne({ _id: new ObjectId(memberId) });
+    } catch {
+      /* ignore */
+    }
+  }
+
   await projects.updateOne({ _id: id }, { $pull: { memberIds: memberId } });
   const updated = await projects.findOne({ _id: id });
-  return NextResponse.json(updated);
+
+  return NextResponse.json({
+    ok: true,
+    project: updated,
+    removed: removedUser
+      ? {
+          id: memberId,
+            name: removedUser.name || removedUser.email || null,
+            email: removedUser.email || null,
+        }
+      : { id: memberId, name: null, email: null }
+  });
+}
+
+export async function GET(
+  _req: Request,
+  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+) {
+  const { userId, error } = await requireUser();
+  if (error) return error;
+  const { id: projectId } = await resolveParams((ctx as any).params);
+  const { projects, db } = await collections();
+  const proj = await projects.findOne({ _id: projectId, memberIds: userId! });
+  if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const memberIds: string[] = Array.isArray(proj.memberIds) ? proj.memberIds : [];
+  if (!memberIds.length) {
+    return NextResponse.json({ members: [] });
+  }
+
+  // Converte para ObjectId quando possível
+  const objectIds: ObjectId[] = [];
+  for (const id of memberIds) {
+    try {
+      objectIds.push(new ObjectId(id));
+    } catch {
+      // ignora (talvez _id seja string em ambiente de testes)
+    }
+  }
+
+  const usersCol = db.collection("users");
+  let users: any[] = [];
+  if (objectIds.length) {
+    users = await usersCol
+      .find({ _id: { $in: objectIds } })
+      .project({ name: 1, email: 1 })
+      .toArray();
+  }
+
+  // Fallback: se não retornou nada e temos ids que não viraram ObjectId, tenta match direto por _id string
+  if (!users.length && objectIds.length !== memberIds.length) {
+    users = await usersCol
+      .find({ _id: { $in: memberIds } })
+      .project({ name: 1, email: 1 })
+      .toArray();
+  }
+
+  return NextResponse.json({
+    members: users.map((u: any) => ({
+      id: String(u._id),
+      name: u.name || u.email,
+      email: u.email,
+      initials: initials(u.name, u.email),
+    })),
+  });
+}
+
+function initials(name?: string, email?: string) {
+  if (name) {
+    const parts = name.trim().split(/\s+/).slice(0, 2);
+    return parts.map(p => p[0]).join("").toUpperCase();
+  }
+  if (email) return email[0].toUpperCase();
+  return "?";
 }

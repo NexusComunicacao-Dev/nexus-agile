@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 
 // Tipos locais (simplificados)
-type Status = "todo" | "doing" | "done";
+type Status = "todo" | "doing" | "testing" | "awaiting deploy" | "deployed" | "done"; // UPDATED
 interface Story {
   _id: string;
   title: string;
@@ -13,6 +13,9 @@ interface Story {
   priority?: string;
   createdAt: string;
   sprintId?: string;
+  description?: string; // NOVO: campo de descrição
+  comments?: { _id: string; userId: string; text: string; createdAt: string }[]; // NEW
+  assigneeId?: string | null; // NEW
 }
 interface Sprint {
   _id: string;
@@ -23,6 +26,7 @@ interface Sprint {
   completedAt?: string;
   projectId: string;
 }
+type Member = { id: string; name: string; email?: string; initials: string }; // NEW
 
 const LS_SELECTED_PROJECT = "wm_selected_project_v1";
 
@@ -48,11 +52,37 @@ export default function SprintsPage() {
   const [newStoryTitle, setNewStoryTitle] = useState("");
   const [storyPoints, setStoryPoints] = useState<string>("");
   const [storyStatus, setStoryStatus] = useState<Status>("todo");
+  const [newTitle, setNewTitle] = useState("");
+  const [newDescription, setNewDescription] = useState(""); 
+  // Estado para edição da descrição
+  const [editingDescription, setEditingDescription] = useState<string>(""); // FIXED
+  // NEW estados para detalhes completos, comentários
+  const [editingFull, setEditingFull] = useState<Story | null>(null);
+  const [commentText, setCommentText] = useState("");
+  const [addingComment, setAddingComment] = useState(false);
 
   // Adição: estados de filtro
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [minPts, setMinPts] = useState<string>("");
   const [maxPts, setMaxPts] = useState<string>("");
+
+  // NOTIFICAÇÕES (snackbar)
+  type Notice = { id: string; type: "success" | "error" | "info"; msg: string };
+  const [notices, setNotices] = useState<Notice[]>([]); // NEW
+  function pushNotice(type: Notice["type"], msg: string, ttl = 3500) { // NEW
+    const id = crypto.randomUUID();
+    setNotices(n => [...n, { id, type, msg }]);
+    setTimeout(() => setNotices(n => n.filter(x => x.id !== id)), ttl);
+  }
+
+  // Confirmação de exclusão
+  const [deleteTarget, setDeleteTarget] = useState<Story | null>(null); // NEW
+  const [deleting, setDeleting] = useState(false); // NEW
+
+  // NEW: estados para membros e responsáveis
+  const [members, setMembers] = useState<Member[]>([]); // NEW
+  const [assigneeNew, setAssigneeNew] = useState<string>(""); // NEW (criação)
+  const [assigneeEdit, setAssigneeEdit] = useState<string>(""); // NEW (edição)
 
   useEffect(() => {
     try {
@@ -87,6 +117,23 @@ export default function SprintsPage() {
   useEffect(() => {
     if (projectId) loadAll(projectId);
   }, [projectId]);
+
+  // NEW: carregar membros do projeto
+  useEffect(() => {
+    async function loadMembers() {
+      if (!projectId) return;
+      try {
+        const r = await fetch(`/api/projects/${projectId}/members`, { cache: "no-store" });
+        if (r.ok) {
+          const js = await r.json();
+          setMembers(js.members || []); // ensure state exists
+        }
+      } catch {
+        // ignore
+      }
+    }
+    loadMembers();
+  }, [projectId]); // NEW efeito (caso ainda não exista)
 
   async function createSprint() {
     if (!projectId || !isAdmin) return;
@@ -124,12 +171,19 @@ export default function SprintsPage() {
     const res = await fetch(`/api/sprints/backlog/stories`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: newStoryTitle.trim(), projectId }),
+      body: JSON.stringify({ 
+        title: newStoryTitle.trim(),
+        projectId,
+        description: newDescription.trim() || undefined,
+        assigneeId: assigneeNew || undefined // NEW
+      }),
     });
     if (res.ok) {
       setNewStoryTitle("");
+      setNewDescription(""); // NEW
+      setAssigneeNew(""); // NEW
       setCreatingStory(false);
-      if (projectId) await loadAll(projectId);
+      await loadAll(projectId);
     }
   }
 
@@ -156,7 +210,26 @@ export default function SprintsPage() {
   function openEdit(story: Story) {
     setEditingStory(story);
     setStoryPoints(story.points != null ? String(story.points) : "");
-    setStoryStatus(story.status);
+    setStoryStatus(story.status as Status);
+    setEditingDescription(story.description || "");
+    setAssigneeEdit(story.assigneeId || "");
+    fetchStoryDetails(story._id); // NEW
+  }
+
+  async function fetchStoryDetails(id: string) { // NEW
+    try {
+      const r = await fetch(`/api/stories/${id}`, { cache: "no-store" });
+      if (r.ok) {
+        const full = await r.json();
+        setEditingFull(full);
+        // garantir sync caso tenha mudado no servidor
+        setStoryStatus(full.status);
+        setEditingDescription(full.description || "");
+        setStoryPoints(full.points != null ? String(full.points) : "");
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   async function saveStoryEdits() {
@@ -167,11 +240,33 @@ export default function SprintsPage() {
       body: JSON.stringify({
         points: storyPoints ? Number(storyPoints) : undefined,
         status: storyStatus,
+        description: editingDescription.trim() || undefined,
+        assigneeId: assigneeEdit || null, // NEW
       }),
     });
     if (res.ok) {
       setEditingStory(null);
+      setEditingFull(null); // NEW
       await loadAll(projectId);
+    }
+  }
+
+  async function addComment() { // NEW
+    if (!editingStory || !commentText.trim()) return;
+    setAddingComment(true);
+    try {
+      const r = await fetch(`/api/stories/${editingStory._id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: commentText.trim() }),
+      });
+      if (r.ok) {
+        const js = await r.json();
+        setEditingFull(f => f ? { ...f, comments: js.comments } : f);
+        setCommentText("");
+      }
+    } finally {
+      setAddingComment(false);
     }
   }
 
@@ -225,6 +320,24 @@ export default function SprintsPage() {
 
   return (
     <section className="grid gap-8">
+      {/* SNACKBAR */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+        {notices.map(n => (
+          <div
+            key={n.id}
+            className={`rounded-md px-3 py-2 text-xs shadow border ${
+              n.type === "success"
+                ? "bg-green-500/15 border-green-500/30 text-green-700"
+                : n.type === "error"
+                ? "bg-red-500/15 border-red-500/30 text-red-600"
+                : "bg-foreground/10 border-foreground/30 text-foreground/80"
+            }`}
+          >
+            {n.msg}
+          </div>
+        ))}
+      </div>
+
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">
@@ -322,18 +435,35 @@ export default function SprintsPage() {
           {filteredBacklog.map((st) => (
             <li
               key={st._id}
-              className="rounded-md border border-foreground/10 bg-background p-3 text-xs flex items-center justify-between gap-3"
+              className="rounded-md border border-foreground/10 bg-background p-3 text-xs flex gap-3"
             >
-              <span
-                className="truncate font-medium cursor-pointer"
+              <div
+                className="min-w-0 flex-1 cursor-pointer"
                 onClick={() => openEdit(st)}
               >
-                {st.title}
-              </span>
+                <div className="font-medium truncate flex items-center gap-2">
+                  <span className="truncate">{st.title}</span>
+                  {st.points != null && (
+                    <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] text-foreground/70">
+                      {st.points} pts
+                    </span>
+                  )}
+                  {st.assigneeId && (
+                    <span className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded-full bg-foreground/10 text-[9px] font-semibold">
+                      {members.find(m=>m.id===st.assigneeId)?.initials || "?"}
+                    </span>
+                  )}
+                </div>
+                {st.description && (
+                  <div className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-[10px] text-foreground/60">
+                    {st.description}
+                  </div>
+                )}
+              </div>
               {active && (
                 <button
                   onClick={() => moveToSprint(st)}
-                  className="rounded-md border border-foreground/20 px-2 py-1 text-[10px] hover:bg-foreground/5"
+                  className="self-start rounded-md border border-foreground/20 px-2 py-1 text-[10px] hover:bg-foreground/5"
                 >
                   + Sprint
                 </button>
@@ -365,7 +495,14 @@ export default function SprintsPage() {
                   className="min-w-0 flex-1 cursor-pointer"
                   onClick={() => openEdit(st)}
                 >
-                  <div className="font-medium truncate">{st.title}</div>
+                  <div className="font-medium truncate flex items-center gap-2">
+                    <span className="truncate">{st.title}</span>
+                    {st.assigneeId && (
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-600 text-[9px] font-semibold">
+                        {members.find(m=>m.id===st.assigneeId)?.initials || "?"}
+                      </span>
+                    )}
+                  </div>
                   <div className="text-[10px] text-foreground/50">
                     Status: {st.status}
                     {st.points != null ? ` • ${st.points} pts` : ""}
@@ -414,9 +551,11 @@ export default function SprintsPage() {
           {history.map((sp) => (
             <li
               key={sp._id}
-              className="rounded-md border border-foreground/10 bg-background p-3 text-xs flex items-center justify-between"
+              className="rounded-md border border-foreground/10 bg-background p-3 text-xs flex items-center justify-between hover:bg-foreground/5 transition cursor-pointer"
+              onClick={() => (window.location.href = `/sprints/${sp._id}`)}
+              title="Ver detalhes da sprint"
             >
-              <span className="truncate">{sp.name}</span>
+              <span className="truncate font-medium">{sp.name}</span>
               <span className="text-[10px] text-foreground/50">
                 {sp.completedAt
                   ? new Date(sp.completedAt).toLocaleDateString()
@@ -435,7 +574,7 @@ export default function SprintsPage() {
       {/* Modal criar sprint */}
       {creatingSprint && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-lg border border-foreground/20 bg-background p-4 grid gap-3 text-sm">
+          <div className="w-full max-w-sm rounded-lg border border-foreground/20 bg-background p-6 grid gap-4 text-sm">
             <h3 className="font-semibold text-sm">Nova Sprint</h3>
             <input
               value={newSprintName}
@@ -449,7 +588,7 @@ export default function SprintsPage() {
               placeholder="Meta (opcional)"
               className="min-h-20 rounded-md border border-foreground/20 bg-background p-2 text-sm"
             />
-            <div className="flex gap-2 justify-end">
+            <div className="flex gap-3 justify-end pt-1">
               <button
                 onClick={() => setCreatingSprint(false)}
                 className="h-8 rounded-md border border-foreground/20 px-3 text-xs hover:bg-foreground/5"
@@ -471,7 +610,7 @@ export default function SprintsPage() {
       {/* Modal criar história */}
       {creatingStory && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-lg border border-foreground/20 bg-background p-4 grid gap-3 text-sm">
+          <div className="w-full max-w-sm rounded-lg border border-foreground/20 bg-background p-6 grid gap-4 text-sm">
             <h3 className="font-semibold text-sm">Nova História (Backlog)</h3>
             <input
               value={newStoryTitle}
@@ -479,7 +618,33 @@ export default function SprintsPage() {
               placeholder="Título"
               className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-sm"
             />
-            <div className="flex gap-2 justify-end">
+            <textarea
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              placeholder="Descrição (opcional)"
+              rows={3}
+              className="rounded-md border border-foreground/20 bg-background px-3 py-2 text-xs resize-y"
+            />
+            {/* Novo: seleção de responsável */}
+            <div className="grid gap-2">
+              <label className="font-medium text-[10px]">Responsável</label>
+              {members.length === 0 && (
+                <div className="text-[10px] text-foreground/50">
+                  Carregando membros ou nenhum membro no projeto.
+                </div>
+              )}
+              <select
+                value={assigneeNew}
+                onChange={(e)=>setAssigneeNew(e.target.value)}
+                className="h-9 rounded-md border border-foreground/20 bg-background px-3 text-xs"
+              >
+                <option value="">Sem responsável</option>
+                {members.map(m=>(
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-3 justify-end pt-1">
               <button
                 onClick={() => setCreatingStory(false)}
                 className="h-8 rounded-md border border-foreground/20 px-3 text-xs hover:bg-foreground/5"
@@ -501,48 +666,169 @@ export default function SprintsPage() {
       {/* Modal editar história */}
       {editingStory && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-lg border border-foreground/20 bg-background p-4 grid gap-3 text-sm">
+          <div className="w-full max-w-sm rounded-lg border border-foreground/20 bg-background p-6 grid gap-5 text-sm">
             <h3 className="font-semibold text-sm">Editar História</h3>
-            <div className="grid gap-2">
-              <div className="text-xs font-medium truncate">
-                {editingStory.title}
+            <div className="grid gap-4 max-h-[70vh] overflow-auto pr-1">
+              <div className="text-xs font-medium break-words flex items-center gap-2">
+                <span className="truncate">{editingFull?.title || editingStory.title}</span>
+                {editingFull?.assigneeId && (
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-foreground/10 text-[9px] font-semibold">
+                    {members.find(m=>m.id===editingFull.assigneeId)?.initials || "?"}
+                  </span>
+                )}
               </div>
-              <label className="grid gap-1 text-[10px]">
-                Pontos
-                <input
-                  value={storyPoints}
-                  onChange={(e) =>
-                    setStoryPoints(e.target.value.replace(/[^0-9]/g, ""))
-                  }
-                  placeholder="ex.: 5"
-                  className="h-8 rounded-md border border-foreground/20 bg-background px-2 text-xs"
+              <label className="grid gap-2 text-[10px]">
+                Descrição
+                <textarea
+                  value={editingDescription}
+                  onChange={(e) => setEditingDescription(e.target.value)}
+                  rows={4}
+                  className="rounded-md border border-foreground/20 bg-background p-2 text-[11px] resize-y"
+                  placeholder="Descrição"
                 />
               </label>
-              <label className="grid gap-1 text-[10px]">
-                Status
+              <div className="flex gap-3">
+                <label className="grid gap-2 text-[10px] flex-1">
+                  Pontos
+                  <input
+                    value={storyPoints}
+                    onChange={(e) => setStoryPoints(e.target.value.replace(/[^0-9]/g, ""))}
+                    placeholder="ex.: 5"
+                    className="h-8 rounded-md border border-foreground/20 bg-background px-2 text-xs"
+                  />
+                </label>
+                <label className="grid gap-2 text-[10px] flex-1">
+                  Status
+                  <select
+                    value={storyStatus}
+                    onChange={(e) => setStoryStatus(e.target.value as Status)}
+                    className="h-8 rounded-md border border-foreground/20 bg-background px-2 text-xs"
+                  >
+                    {["todo","doing","testing","awaiting deploy","deployed","done"].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {/* Novo: seleção de responsável (edição) */}
+              <label className="grid gap-2 text-[10px]">
+                Responsável
                 <select
-                  value={storyStatus}
-                  onChange={(e) => setStoryStatus(e.target.value as Status)}
+                  value={assigneeEdit}
+                  onChange={(e)=>setAssigneeEdit(e.target.value)}
                   className="h-8 rounded-md border border-foreground/20 bg-background px-2 text-xs"
                 >
-                  <option value="todo">To Do</option>
-                  <option value="doing">Doing</option>
-                  <option value="done">Done</option>
+                  <option value="">Sem responsável</option>
+                  {members.map(m=>(
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
                 </select>
+                {members.length === 0 && (
+                  <span className="text-[9px] text-foreground/50">
+                    Nenhum membro carregado.
+                  </span>
+                )}
               </label>
+              <div className="grid gap-2 text-[10px]">
+                <span className="font-medium">Comentários</span>
+                <div className="rounded-md border border-foreground/10 bg-foreground/5 p-3 flex flex-col gap-3 max-h-40 overflow-auto">
+                  {(editingFull?.comments || []).length ? (
+                    editingFull!.comments!
+                      .slice()
+                      .sort((a,b)=>new Date(a.createdAt).getTime()-new Date(b.createdAt).getTime())
+                      .map(c => (
+                        <div key={c._id} className="rounded-md bg-background/60 border border-foreground/10 p-2">
+                          <div className="flex justify-between text-[9px] text-foreground/50">
+                            <span>{c.userId.slice(0,6)}</span>
+                            <span>{new Date(c.createdAt).toLocaleTimeString()}</span>
+                          </div>
+                          <div className="mt-1 whitespace-pre-wrap break-words text-[10px]">{c.text}</div>
+                        </div>
+                      ))
+                  ) : (
+                    <div className="text-foreground/50 text-[10px] italic">Sem comentários.</div>
+                  )}
+                </div>
+                <div className="flex gap-3 mt-2">
+                  <input
+                    value={commentText}
+                    onChange={(e)=>setCommentText(e.target.value)}
+                    placeholder="Novo comentário..."
+                    className="h-8 flex-1 rounded-md border border-foreground/20 bg-background px-2 text-[10px]"
+                  />
+                  <button
+                    onClick={addComment}
+                    disabled={!commentText.trim() || addingComment}
+                    className="h-8 rounded-md bg-foreground px-3 text-background text-[10px] font-medium disabled:opacity-40"
+                  >
+                    {addingComment ? "..." : "Enviar"}
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="flex gap-2 justify-end">
+
+            <div className="flex flex-wrap justify-between gap-3 pt-2">
               <button
-                onClick={() => setEditingStory(null)}
-                className="h-8 rounded-md border border-foreground/20 px-3 text-xs hover:bg-foreground/5"
+                onClick={() => editingStory && setDeleteTarget(editingStory)}
+                className="h-8 rounded-md bg-red-600 px-3 text-background text-xs font-medium hover:opacity-90"
+              >
+                Excluir
+              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setEditingStory(null); setEditingFull(null); }}
+                  className="h-8 rounded-md border border-foreground/20 px-3 text-xs hover:bg-foreground/5"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={saveStoryEdits}
+                  className="h-8 rounded-md bg-foreground px-3 text-background text-xs font-medium"
+                >
+                  Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal confirmação de exclusão (NEW) */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-lg border border-red-500/30 bg-background p-6 grid gap-5">
+            <h4 className="text-sm font-semibold text-red-600">
+              Confirmar exclusão
+            </h4>
+            <div className="text-[11px] text-foreground/70 leading-relaxed space-y-3">
+              Tem certeza que deseja excluir a história:
+              <br />
+              <span className="font-medium text-foreground break-words">
+                {deleteTarget.title}
+              </span>
+              {deleteTarget.description && (
+                <div className="mt-2 rounded-md border border-foreground/10 bg-foreground/5 p-2 max-h-40 overflow-auto whitespace-pre-wrap text-foreground/70">
+                  {deleteTarget.description}
+                </div>
+              )}
+              <div className="mt-3 text-foreground/60">
+                Esta ação é permanente e não pode ser desfeita.
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="h-8 rounded-md border border-foreground/20 px-3 text-xs hover:bg-foreground/5 disabled:opacity-40"
               >
                 Cancelar
               </button>
               <button
-                onClick={saveStoryEdits}
-                className="h-8 rounded-md bg-foreground px-3 text-background text-xs font-medium"
+                onClick={performDelete}
+                disabled={deleting}
+                className="h-8 rounded-md bg-red-600 px-3 text-background text-xs font-medium hover:opacity-90 disabled:opacity-40"
               >
-                Salvar
+                {deleting ? "Excluindo..." : "Excluir"}
               </button>
             </div>
           </div>
@@ -559,5 +845,27 @@ export default function SprintsPage() {
       body: JSON.stringify({ status: next }),
     });
     await loadAll(projectId);
+  }
+
+  // Substitui deleteStoryPersistent: agora somente execução final
+  async function performDelete() { // NEW
+    if (!projectId || !deleteTarget) return;
+    setDeleting(true);
+    const id = deleteTarget._id;
+    try {
+      const res = await fetch(`/api/stories/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        pushNotice("success", "História excluída");
+        setEditingStory(s => (s && s._id === id ? null : s));
+        await loadAll(projectId);
+      } else {
+        pushNotice("error", "Falha ao excluir história");
+      }
+    } catch {
+      pushNotice("error", "Erro de rede ao excluir");
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
   }
 }

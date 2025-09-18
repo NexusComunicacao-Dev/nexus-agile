@@ -22,8 +22,8 @@ const comfortaa = Comfortaa({
 });
 
 export const metadata: Metadata = {
-  title: "Nexus Agile — Kanban, Poker e Sprints",
-  description: "Planejamento de trabalho em equipe com Kanban, Planning Poker e Sprints.",
+  title: "Nexus Agile — Gerenciamento de Tarefas",
+  description: "Planejamento de trabalho em equipe da Nexus.",
 };
 
 export default function RootLayout({
@@ -36,12 +36,12 @@ export default function RootLayout({
       <body className={`${comfortaa.variable} ${geistSans.variable} ${geistMono.variable} antialiased`}>
         <Providers>
           <header className="w-full border-b border-black/10 dark:border-white/10">
-            <nav className="mx-auto max-w-5xl flex items-center justify-between p-4 text-sm">
+            <nav className="mx-auto max-w-[80vw] flex items-center justify-between p-4 text-sm">
               <a href="/" className="font-semibold">Nexus Agile</a>
               <NavClient />
             </nav>
           </header>
-          <main className="mx-auto max-w-5xl p-6">{children}</main>
+          <main className="mx-auto max-w-[80vw] p-6">{children}</main>
         </Providers>
       </body>
     </html>

@@ -157,3 +157,22 @@ Ordem recomendada:
 1. Usuário pede admin (POST /api/admin/requests).
 2. Admin avalia (GET /api/admin/requests) e decide (PATCH).
 3. Admin promove via rota /api/admin/users (POST) se aprovado.
+
+## Planning Poker (persistido)
+
+Endpoints:
+- GET /api/projects/:projectId/poker — detalhes da sessão ativa + histórias + votos (história ativa).
+- POST /api/projects/:projectId/poker — cria sessão ativa (se não existir).
+- PATCH /api/projects/:projectId/poker
+  - { "action": "selectStory", "storyId": "<id>" }
+  - { "action": "reveal" }
+  - { "action": "resetVotes" }
+  - { "action": "close" }
+- POST /api/poker/:sessionId/vote  { "value": "5" | "8" | "?" | "☕" }
+- GET  /api/poker/:sessionId/vote  (estado rápido de votos)
+- POST /api/poker/:sessionId/apply { "points": 8 } (opcional; se omitido calcula moda numérica)
+
+Notas:
+- Votos só aceitos antes de reveal.
+- resetVotes limpa votos da história ativa e volta revealed=false.
+- apply atualiza story.points.
