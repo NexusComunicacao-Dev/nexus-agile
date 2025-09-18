@@ -3,6 +3,7 @@ import { collections } from "@/lib/db";
 import { requireUser } from "@/lib/require-auth";
 import clientPromise from "@/lib/mongodb";
 import { sendMail } from "@/lib/mailer";
+import { buildEmailTemplate } from "@/lib/email-template";
 import { ObjectId } from "mongodb";
 
 // Helper para resolver params (compatível com Next que pode entregar Promise)
@@ -47,18 +48,27 @@ export async function POST(req: Request, ctx: { params: { id: string } } | { par
     }
 
     try {
+      const { html, text } = buildEmailTemplate({
+        title: `Convite • ${proj.name}`,
+        preheader: `Você foi convidado para o projeto ${proj.name}`,
+        heading: "Convite para Projeto",
+        body: [
+          `Você foi convidado para participar do projeto "${proj.name}".`,
+          "Ao acessar a aplicação com este e-mail, seu acesso será liberado automaticamente.",
+        ],
+        ctaLabel: "Acessar Nexus Agile",
+        ctaUrl: `${baseUrl}/projects`,
+        footerNote: "Se você não esperava este convite, pode ignorar este e-mail.",
+      });
       await sendMail({
         to: email,
         subject: `Convite para projeto ${proj.name}`,
-        text: `Você foi convidado para o projeto "${proj.name}". Faça login para acessar: ${baseUrl}/projects`,
-        html: `<p>Você foi convidado para o projeto <strong>${proj.name}</strong>.</p>
-               <p>Faça login para aceitar automaticamente: <a href="${baseUrl}/projects" target="_blank" rel="noopener">${baseUrl}/projects</a></p>
-               <p>— Nexus Agile</p>`,
+        text,
+        html,
       });
     } catch (e) {
       console.warn("Failed to send invite email", e);
     }
-
     return NextResponse.json({ invited: true, email });
   }
 
@@ -70,14 +80,24 @@ export async function POST(req: Request, ctx: { params: { id: string } } | { par
   const updated = await projects.findOne({ _id: id });
 
   try {
+    const { html, text } = buildEmailTemplate({
+      title: `Adicionado • ${proj?.name}`,
+      preheader: `Você agora faz parte do projeto ${proj?.name}`,
+      heading: "Acesso Concedido",
+      body: [
+        `Olá${existingUser?.name ? ` ${existingUser.name}` : ""},`,
+        `Você foi adicionado ao projeto "${proj?.name}".`,
+        "Clique abaixo para abrir o painel de projetos.",
+      ],
+      ctaLabel: "Abrir Projetos",
+      ctaUrl: `${baseUrl}/projects`,
+      footerNote: "Caso não reconheça esta ação, entre em contato com um administrador.",
+    });
     await sendMail({
       to: email,
       subject: `Você foi adicionado ao projeto ${proj?.name}`,
-      text: `Olá${existingUser?.name ? " " + existingUser.name : ""}, você agora é membro do projeto "${proj?.name}". Acesse: ${baseUrl}/projects`,
-      html: `<p>Olá${existingUser?.name ? " <strong>" + existingUser.name + "</strong>" : ""},</p>
-             <p>Você foi adicionado ao projeto <strong>${proj?.name}</strong>.</p>
-             <p><a href="${baseUrl}/projects" target="_blank" rel="noopener">Abrir a aplicação</a></p>
-             <p>— Nexus Agile</p>`,
+      text,
+      html,
     });
   } catch (e) {
     console.warn("Failed to send member notification email", e);

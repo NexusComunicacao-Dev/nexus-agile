@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import clientPromise from "@/lib/mongodb";
+import { buildEmailTemplate } from "@/lib/email-template";
 import { sendMail } from "@/lib/mailer";
 
 type AdminRequest = {
@@ -55,18 +56,33 @@ export async function POST(req: Request) {
   try {
     const usersCol = db.collection("users");
     const admins = await usersCol.find({ admin: true }).toArray();
+    const baseUrl = process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || "http://localhost:3000";
+    // SUBSTITUI bloco anterior de envio simples por template estilizado
     if (admins.length) {
-      const to = admins.map((a: { email: string }) => a.email).filter(Boolean) as string[];
-      const baseUrl = process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || "http://localhost:3000";
-      await sendMail({
-        to,
-        subject: process.env.ADMIN_REQUEST_NOTIFY_SUBJECT || "Novo pedido de admin",
-        text: `Pedido de admin de ${email}\nMotivo: ${reason || "(não informado)"}\nAções: avaliar e promover manualmente.\n${baseUrl}/projects`,
-        html: `<p><strong>Novo pedido de admin</strong></p>
-               <p><b>Usuário:</b> ${email}</p>
-               <p><b>Motivo:</b> ${reason || "(não informado)"}</p>
-               <p>Para promover: usar painel /projects (Admin) ou via API.</p>`
+      const { html, text } = buildEmailTemplate({
+        title: "Pedido de acesso de admin",
+        preheader: `Novo pedido de admin de ${email}`,
+        heading: "Novo Pedido de Acesso Admin",
+        body: [
+          `Usuário: ${email}`,
+          reason ? `Motivo informado: "${reason}"` : "Nenhum motivo fornecido.",
+          "Acesse o painel de pedidos para aprovar ou rejeitar."
+        ],
+        ctaLabel: "Rever Pedidos",
+        ctaUrl: `${baseUrl}/admin/requests`,
+        footerNote: "Você está recebendo este e-mail por ser administrador do Nexus Agile."
       });
+
+      await Promise.all(
+        admins.map((a: { email: string }) =>
+          sendMail({
+            to: a.email,
+            subject: "Nexus Agile • Novo pedido de admin",
+            html,
+            text,
+          }).catch(() => {})
+        )
+      );
     }
   } catch (e) {
     console.warn("Failed to send admin request notification", e);

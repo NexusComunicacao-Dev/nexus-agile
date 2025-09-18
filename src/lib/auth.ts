@@ -133,3 +133,4 @@ export const authOptions: NextAuthOptions = {
     },
   },
 };
+// (Sem alterações obrigatórias para o novo template neste momento)
