@@ -29,22 +29,31 @@ export function buildEmailTemplate(opts: EmailTemplateOptions) {
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
   :root { color-scheme: light dark; }
-  body { margin:0; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:#f5f7fb; }
-  .container { max-width:560px; margin:24px auto 40px; background:#ffffff; border-radius:14px; overflow:hidden; border:1px solid #e5e9f2; box-shadow:0 4px 18px rgba(0,0,0,0.06);}
-  .header { background:linear-gradient(135deg,#4f46e5,#6366f1); padding:28px 32px; color:#fff; }
-  h1 { margin:0; font-size:20px; line-height:1.3; }
+  body { margin:0; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:#f6f7f9; }
+  .container { max-width:560px; margin:24px auto 40px; background:#ffffff; border-radius:16px; overflow:hidden; border:1px solid #eceeef; box-shadow:0 4px 22px -2px rgba(0,0,0,0.06);}
+  .header { background:linear-gradient(135deg,#FF7C1A,#ff9d59); padding:30px 34px; color:#fff; }
+  h1 { margin:0; font-size:21px; line-height:1.25; font-weight:600; letter-spacing:.3px; }
   .preheader { display:none !important; visibility:hidden; opacity:0; height:0; mso-hide:all; }
-  .content { padding:32px 34px 30px; color:#1f2937; font-size:14px; line-height:1.55; }
-  .content p { margin:0 0 14px; }
-  .cta-wrapper { margin:28px 0 8px; }
-  .cta { display:inline-block; background:#4f46e5; color:#fff !important; text-decoration:none; padding:12px 24px; font-weight:600; border-radius:8px; font-size:14px; letter-spacing:.3px; box-shadow:0 2px 8px rgba(79,70,229,0.45); }
-  .cta:hover { background:#4338ca; }
-  .divider { height:1px; background:#e5e9f2; margin:30px 0 24px; }
-  .footer { font-size:11px; color:#6b7280; line-height:1.4; }
-  .brand { font-weight:600; color:#4f46e5; }
+  .content { padding:34px 36px 32px; color:#2a2d31; font-size:14px; line-height:1.58; }
+  .content p { margin:0 0 15px; }
+  .cta-wrapper { margin:30px 0 10px; }
+  .cta { display:inline-block; background:#FF7C1A; color:#fff !important; text-decoration:none; padding:13px 26px; font-weight:600; border-radius:10px; font-size:14px; letter-spacing:.2px; box-shadow:0 2px 10px rgba(255,124,26,0.45); transition:background .25s;}
+  .cta:hover { background:#f06f0e; }
+  .badge { display:inline-block; background:#FFF4EC; color:#FF7C1A; font-size:11px; font-weight:600; padding:4px 10px; border-radius:20px; letter-spacing:.4px; margin-bottom:18px; }
+  .divider { height:1px; background:#eceeef; margin:34px 0 26px; }
+  .footer { font-size:11px; color:#888888; line-height:1.45; }
+  .brand { font-weight:600; color:#FF7C1A; }
   @media (max-width:600px){
-    .content { padding:28px 22px 26px; }
-    .header { padding:24px 24px; }
+    .content { padding:30px 22px 28px; }
+    .header { padding:26px 26px; }
+  }
+  @media (prefers-color-scheme: dark){
+    body { background:#0e1114; }
+    .container { background:#15191d; border-color:#1f2429; }
+    .content { color:#d0d4d8; }
+    .divider { background:#262c31; }
+    .footer { color:#777; }
+    .cta { box-shadow:0 2px 10px rgba(255,124,26,0.55); }
   }
 </style>
 </head>
@@ -55,6 +64,7 @@ export function buildEmailTemplate(opts: EmailTemplateOptions) {
       <h1>${escapeHtml(heading)}</h1>
     </div>
     <div class="content">
+      ${bodyLines.length ? `<div class="badge">NEXUS AGILE</div>` : ""}
       ${bodyLines.map(line => `<p>${escapeHtmlInline(line)}</p>`).join("")}
       ${
         ctaLabel && ctaUrl

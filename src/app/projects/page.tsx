@@ -149,38 +149,58 @@ export default function ProjectsPage() {
       </div>
 
       <header>
-        <h1 className="text-2xl font-semibold">Projetos</h1>
-        <p className="text-xs text-foreground/60">
-          {isAdmin ? "Você é admin. Pode criar projetos e gerenciar membros." : "Você só vê projetos dos quais é membro. Criação pode estar limitada a admins."}
+        <h1 className="text-2xl font-semibold flex items-center gap-2">
+          <span>Projetos</span>
+        </h1>
+        <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+          {isAdmin
+            ? "Você é admin. Pode criar projetos e gerenciar membros."
+            : "Você só vê projetos dos quais é membro."}
         </p>
       </header>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-foreground/10 p-4">
-          <h2 className="mb-2 text-sm font-semibold">Meus projetos</h2>
+        <div className="card-surface p-4">
+          <h2 className="mb-2 text-sm font-semibold flex items-center gap-2">
+            <span className="badge-brand">Lista</span>
+            <span>Meus projetos</span>
+          </h2>
           {loading ? (
-            <div className="text-xs text-foreground/60">Carregando...</div>
+            <div className="text-xs text-[var(--muted-foreground)]">Carregando...</div>
           ) : (
             <ul className="grid gap-2">
               {items.map((p) => (
-                <li key={p._id} className={`rounded-md border border-foreground/10 bg-background p-3 ${selected === p._id ? "ring-1 ring-foreground/30" : ""}`}>
+                <li
+                  key={p._id}
+                  className={`relative rounded-md border border-foreground/10 bg-background/60 p-3 transition 
+                    ${selected === p._id ? "ring-2 ring-[var(--brand-primary)] shadow-brand" : "hover:border-[var(--brand-primary)]/40"}`}
+                >
+                  <div className="absolute inset-x-0 top-0 h-1 rounded-t-md bg-gradient-to-r from-[#FF7C1A] to-[#ff9d59] opacity-70" />
                   <div className="flex items-center justify-between gap-2">
-                    <div onClick={() => setSelected(p._id)} className="min-w-0 cursor-pointer">
-                      <div className="text-xs text-foreground/60">{p.key}</div>
-                      <div className="text-sm font-medium">{p.name}</div>
-                      <div className="text-[10px] text-foreground/60">Membros: {p.memberIds.length}</div>
+                    <div onClick={() => setSelected(p._id)} className="min-w-0 cursor-pointer flex flex-col gap-2">
+                      <div className="text-[10px] tracking-wide font-medium text-[var(--brand-secondary)]">{p.key}</div>
+                      <div className="text-sm font-semibold">{p.name}</div>
+                      <div className="text-[10px] text-[var(--muted-foreground)]">
+                        Membros: {p.memberIds.length}
+                      </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => setSelected(p._id)} className="rounded-md border border-foreground/20 px-2 py-1 text-xs hover:bg-foreground/5">
+                    <div className="flex flex-col gap-1">
+                      <button
+                        onClick={() => setSelected(p._id)}
+                        className="h-7 rounded-md border border-foreground/15 px-2 text-[10px] hover:bg-[var(--brand-primary)]/10"
+                      >
                         Selecionar
                       </button>
-                      <button onClick={() => openSprints(p)} className="rounded-md border border-foreground/20 px-2 py-1 text-xs hover:bg-foreground/5">
-                        Abrir Sprints
+                      <button
+                        onClick={() => openSprints(p)}
+                        className="h-7 rounded-md border border-foreground/15 px-2 text-[10px] hover:bg-[var(--brand-primary)]/10"
+                      >
+                        Sprints
                       </button>
                       {(isAdmin || p.ownerId === meId) && (
                         <a
                           href={`/projects/${p._id}/settings`}
-                          className="rounded-md border border-foreground/20 px-2 py-1 text-xs hover:bg-foreground/5"
+                          className="h-7 rounded-md border border-foreground/15 px-2 text-[10px] hover:bg-[var(--brand-primary)]/10  flex items-center justify-center"
                         >
                           Config
                         </a>
@@ -190,26 +210,42 @@ export default function ProjectsPage() {
                 </li>
               ))}
               {items.length === 0 && (
-                <li className="text-xs text-foreground/60">
-                  Nenhum projeto. Crie um projeto ao lado para começar e então abra as sprints.
+                <li className="text-xs text-[var(--muted-foreground)]">
+                  Nenhum projeto. Crie um ao lado.
                 </li>
               )}
             </ul>
           )}
         </div>
 
-        <div className="rounded-lg border border-foreground/10 p-4">
-          <h2 className="mb-2 text-sm font-semibold">Criar projeto</h2>
+        <div className="card-surface p-4">
+          <h2 className="mb-2 text-sm font-semibold flex items-center gap-2">
+            <span className="badge-brand">Novo</span>
+            <span>Criar projeto</span>
+          </h2>
           {!(allowSelfCreate || isAdmin) ? (
-            <div className="text-xs text-foreground/60">
-              A criação de projetos está desabilitada. Peça a um administrador para criar e convidá-lo.
+            <div className="text-xs text-[var(--muted-foreground)]">
+              Criação desabilitada. Peça a um admin.
             </div>
           ) : (
             <>
               <div className="flex gap-2">
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome" className="h-9 flex-1 rounded-md border border-foreground/20 bg-background px-3 text-sm" />
-                <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="SIGLA (ex.: NX)" className="h-9 w-36 rounded-md border border-foreground/20 bg-background px-3 text-sm uppercase" />
-                <button onClick={createProject} className="h-9 rounded-md bg-foreground px-3 text-background text-sm font-medium hover:opacity-90">
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Nome"
+                  className="h-9 flex-1 rounded-md border border-border bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)]"
+                />
+                <input
+                  value={key}
+                  onChange={(e) => setKey(e.target.value)}
+                  placeholder="SIGLA"
+                  className="h-9 w-36 rounded-md border border-border bg-background px-3 text-sm uppercase focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)]"
+                />
+                <button
+                  onClick={createProject}
+                  className="btn-primary h-9 px-4 text-sm"
+                >
                   Criar
                 </button>
               </div>
@@ -217,28 +253,44 @@ export default function ProjectsPage() {
               <div className="mt-6">
                 <h3 className="mb-2 text-sm font-semibold">Membros</h3>
                 {!selected ? (
-                  <div className="text-xs text-foreground/60">Selecione um projeto para gerenciar membros.</div>
+                  <div className="text-xs text-[var(--muted-foreground)]">
+                    Selecione um projeto.
+                  </div>
                 ) : isOwner ? (
                   <div className="grid gap-2">
                     <div className="flex gap-2">
-                      <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@empresa.com" className="h-9 flex-1 rounded-md border border-foreground/20 bg-background px-3 text-sm" />
-                      <button onClick={addMember} className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-foreground/5">
+                      <input
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="email@empresa.com"
+                        className="h-9 flex-1 rounded-md border border-border bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)]"
+                      />
+                      <button
+                        onClick={addMember}
+                        className="h-9 rounded-md border border-foreground/20 px-3 text-sm hover:bg-[var(--brand-primary)]/10"
+                      >
                         Adicionar
                       </button>
                     </div>
-                    <div className="text-[11px] text-foreground/60">A remoção também é só pelo dono (via memberId por enquanto).</div>
+                    <div className="text-[10px] text-[var(--muted-foreground)]">
+                      Remoção apenas pelo dono.
+                    </div>
                   </div>
                 ) : (
-                  <div className="text-xs text-foreground/60">Apenas o dono do projeto pode gerenciar membros.</div>
+                  <div className="text-xs text-[var(--muted-foreground)]">
+                    Apenas o dono gerencia membros.
+                  </div>
                 )}
               </div>
             </>
           )}
 
-          {/* NEW: painel de pedido de admin (apenas não-admin) */}
           {!isAdmin && (
-            <div className="mt-8 rounded-md border border-foreground/10 p-3">
-              <h3 className="mb-2 text-sm font-semibold">Solicitar acesso de admin</h3>
+            <div className="mt-8 rounded-md border border-border p-3 bg-background/40">
+              <h3 className="mb-2 text-sm font-semibold flex items-center gap-2">
+                <span className="badge-brand">Permissão</span>
+                <span>Solicitar admin</span>
+              </h3>
               <p className="text-[11px] text-foreground/60 mb-2">
                 Admins podem criar projetos e gerenciar usuários. Descreva por que precisa dessa permissão.
               </p>

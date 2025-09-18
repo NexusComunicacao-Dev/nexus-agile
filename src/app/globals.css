@@ -25,7 +25,6 @@ body {
   font-family: var(--font-comfortaa), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
   transition: color 200ms ease, background-color 200ms ease;
 }
-
 /* --- utility animations --- */
 @keyframes pop-in {
   0% { transform: scale(0.97); opacity: 0 }
@@ -50,3 +49,31 @@ body {
 .animate-slide-up { animation: slide-up 200ms cubic-bezier(.2,.8,.2,1) both; }
 
 .transition-base { transition: all 200ms cubic-bezier(.2,.8,.2,1); }
+
+/* === FIX ALINHAMENTO VERTICAL DE BOTÕES (NOVO) ===
+   Aplica flex para centralizar conteúdo em qualquer altura (h-7/h-8/h-9).
+   Inclui anchors com classe rounded-md usados como botões. */
+button,
+a.rounded-md,
+a.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+/* Garantir que ícones + texto fiquem com pequeno gap (se houver múltiplos nós) */
+button > :not(:only-child),
+a.rounded-md > :not(:only-child) {
+  margin-top: 0; /* evita “subir” primeira linha em alguns casos */
+}
+
+/* Opcional: suaviza foco visual para acessibilidade (não interfere em ring custom) */
+button:focus-visible,
+a.rounded-md:focus-visible {
+  outline: 2px solid rgba(255,124,26,0.35);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+/* === FIM FIX === */

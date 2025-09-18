@@ -326,22 +326,20 @@ export default function BoardPage() {
       </div>
 
       <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Kanban</h1>
-          <p className="text-xs text-foreground/60">
-            Fluxo de trabalho do projeto.
-            {data?.activeSprint && (
-              <>
-                {" "}
-                Sprint ativa:{" "}
-                <span className="font-medium">{data.activeSprint.name}</span>
-              </>
-            )}
-          </p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h1 className="text-2xl font-semibold">Board</h1>
+            <p className="text-[11px] text-[var(--muted-foreground)]">
+              Fluxo de trabalho do projeto
+              {data?.activeSprint && (
+                <> • Sprint ativa: <span className="font-medium text-[var(--brand-primary)]">{data.activeSprint.name}</span></>
+              )}
+            </p>
+          </div>
         </div>
         <button
           onClick={load}
-          className="h-9 rounded-md border border-foreground/20 px-3 text-xs hover:bg-foreground/5"
+          className="btn-primary h-9 px-4 text-xs"
         >
           Recarregar
         </button>
@@ -358,13 +356,14 @@ export default function BoardPage() {
                 key={col.id || col.title}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, (col.id || col.title || "").toString())}
-                className="rounded-lg border border-foreground/10 bg-background p-3 flex flex-col gap-3 min-h-[320px]"
+                className="rounded-lg border border-border bg-background/90 backdrop-blur-sm p-3 flex flex-col gap-3 min-h-[340px] shadow-sm hover:shadow-brand transition"
               >
                 <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold">
+                  <h2 className="text-sm font-semibold flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full mr-2 bg-[var(--brand-primary)]/70" />
                     {col.title || col.id}
                   </h2>
-                  <span className="text-[10px] text-foreground/50">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] font-medium">
                     {(col.items || []).length}
                   </span>
                 </div>
@@ -555,20 +554,22 @@ export default function BoardPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-3 pt-2"> {/* was gap-2 */}
-                  {["todo", "doing", "testing", "awaiting deploy", "deployed", "done"].map((st) => (
-                    <button
-                      key={st}
-                      onClick={() => updateStoryStatus(storyData._id, st)}
-                      disabled={storyData.status === st}
-                      className={`h-8 rounded-md border px-3 text-[11px] ${
-                        storyData.status === st
-                          ? "bg-foreground text-background"
-                          : "border-foreground/20 hover:bg-foreground/5"
-                      }`}
-                    >
-                      {st}
-                    </button>
-                  ))}
+                  {["todo","doing","testing","awaiting deploy","deployed","done"].map((st) => {
+                    const active = storyData.status === st;
+                    return (
+                      <button
+                        key={st}
+                        onClick={() => updateStoryStatus(storyData._id, st)}
+                        disabled={active}
+                        className={`h-8 rounded-md px-3 text-[11px] font-medium border transition
+                          ${active
+                            ? "bg-[var(--brand-primary)] text-white border-[var(--brand-primary)] shadow-brand"
+                            : "border-border hover:border-[var(--brand-primary)] hover:bg-[var(--brand-primary)]/10"}`}
+                      >
+                        {st}
+                      </button>
+                    );
+                  })}
                 </div>
                 <div className="flex justify-end gap-3 pt-2">
                   <button
