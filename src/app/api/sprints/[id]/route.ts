@@ -58,13 +58,14 @@ function computeStoryLeadMetrics(story: any) {
   };
 }
 
+// GET sprint + histórias + métricas
 export async function GET(
-  _req: Request,
-  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+  req: Request,
+  context: { params: Promise<{ id: string }> } // UPDATED
 ) {
+  const { id } = await context.params; // NEW
   const { userId, error } = await requireUser();
   if (error) return error;
-  const { id } = await resolveParams((ctx as any).params);
   const { sprints, projects, stories } = await collections();
   const sprint = await sprints.findOne({ _id: id });
   if (!sprint) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -128,13 +129,14 @@ export async function GET(
   });
 }
 
+// PATCH (ex: finalizar sprint ou editar objetivo)
 export async function PATCH(
   req: Request,
-  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> } // UPDATED
 ) {
+  const { id } = await context.params; // NEW
   const { userId, error } = await requireUser();
   if (error) return error;
-  const { id } = await resolveParams((ctx as any).params); // UPDATED
   const body = await req.json().catch(() => ({}));
   const session = await getServerSession(authOptions);
   const isAdmin = Boolean((session?.user as any)?.admin);
@@ -160,13 +162,14 @@ export async function PATCH(
   return NextResponse.json(updated);
 }
 
+// DELETE (se existente – remoção de sprint)
 export async function DELETE(
-  _req: Request,
-  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+  req: Request,
+  context: { params: Promise<{ id: string }> } // UPDATED
 ) {
+  const { id } = await context.params; // NEW
   const { userId, error } = await requireUser();
   if (error) return error;
-  const { id } = await resolveParams((ctx as any).params); // UPDATED
   const { sprints, projects } = await collections();
   const sprint = await sprints.findOne({ _id: id }); // UPDATED
   if (!sprint) return NextResponse.json({ error: "Not found" }, { status: 404 });

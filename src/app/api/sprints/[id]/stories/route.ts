@@ -8,14 +8,15 @@ async function resolveParams(p: any): Promise<{ id: string }> {
   return typeof p?.then === "function" ? await p : p;
 }
 
+// POST criar história na sprint (principal erro reportado)
 export async function POST(
   req: Request,
-  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+  ctx: { params: Promise<{ id: string }> }
 ) {
   const { userId, error } = await requireUser();
   if (error) return error;
 
-  const { id: sprintId } = await resolveParams((ctx as any).params); // NEW
+  const { id: sprintId } = await resolveParams(ctx.params); // NEW
 
   const body = await req.json().catch(() => ({}));
   const title = String(body?.title || "").trim();
@@ -47,7 +48,7 @@ export async function POST(
 }
 
 // Caso existam outros handlers (GET / DELETE / etc.), aplicar o mesmo padrão:
-// export async function GET(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
-//   const { id } = await resolveParams((ctx as any).params);
+// export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+//   const { id } = await ctx.params;
 //   // ...existing code...
 // }

@@ -12,16 +12,19 @@ function buildSessionName(projectName: string) {
   return `Planning Poker • ${projectName} • ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export async function GET(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
-  const { id: projectId } = await resolveParams((ctx as any).params);
+export async function GET(
+  req: Request,
+  context: { params: Promise<{ id: string }> } // UPDATED
+) {
+  const { id } = await context.params; // NEW
   const { userId, error } = await requireUser();
   if (error) return error;
 
   const { projects, stories, pokerSessions, pokerVotes } = await collections();
-  const proj = await projects.findOne({ _id: projectId, memberIds: userId! });
+  const proj = await projects.findOne({ _id: id, memberIds: userId! });
   if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  let session = await pokerSessions.findOne({ projectId, status: "active" });
+  let session = await pokerSessions.findOne({ projectId: id, status: "active" });
   if (session && (!session.name || !session.shortCode)) {
     await pokerSessions.updateOne(
       { _id: session._id },
@@ -30,7 +33,7 @@ export async function GET(req: Request, ctx: { params: { id: string } } | { para
     session = await pokerSessions.findOne({ _id: session._id });
   }
 
-  const allStories = await stories.find({ projectId }).toArray();
+  const allStories = await stories.find({ projectId: id }).toArray();
   const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
   allStories.sort((a: any, b: any) => {
     const ap = a.points == null ? 0 : 1;
@@ -71,24 +74,27 @@ export async function GET(req: Request, ctx: { params: { id: string } } | { para
   });
 }
 
-export async function POST(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
-  const { id: projectId } = await resolveParams((ctx as any).params);
+export async function POST(
+  req: Request,
+  context: { params: Promise<{ id: string }> } // UPDATED
+) {
+  const { id } = await context.params; // NEW
   const { userId, error } = await requireUser();
   if (error) return error;
   const body = await req.json().catch(() => ({}));
   const explicitName = (body?.name || "").toString().trim().slice(0, 160);
 
   const { projects, pokerSessions } = await collections();
-  const proj = await projects.findOne({ _id: projectId, memberIds: userId! });
+  const proj = await projects.findOne({ _id: id, memberIds: userId! });
   if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const existing = await pokerSessions.findOne({ projectId, status: "active" });
+  const existing = await pokerSessions.findOne({ projectId: id, status: "active" });
   if (existing) return NextResponse.json(existing);
 
   const _id = crypto.randomUUID();
   const doc = {
     _id,
-    projectId,
+    projectId: id,
     name: explicitName || buildSessionName(proj.name),
     shortCode: _id.slice(0, 6).toUpperCase(),
     status: "active",
@@ -101,8 +107,11 @@ export async function POST(req: Request, ctx: { params: { id: string } } | { par
   return NextResponse.json(doc, { status: 201 });
 }
 
-export async function PATCH(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
-  const { id: projectId } = await resolveParams((ctx as any).params);
+export async function PATCH(
+  req: Request,
+  context: { params: Promise<{ id: string }> } // UPDATED
+) {
+  const { id } = await context.params; // NEW
   const { userId, error } = await requireUser();
   if (error) return error;
   const body = await req.json().catch(() => ({}));
@@ -110,10 +119,10 @@ export async function PATCH(req: Request, ctx: { params: { id: string } } | { pa
   const storyId = body?.storyId ? String(body.storyId) : null;
 
   const { projects, pokerSessions, pokerVotes } = await collections();
-  const proj = await projects.findOne({ _id: projectId, memberIds: userId! });
+  const proj = await projects.findOne({ _id: id, memberIds: userId! });
   if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const session = await pokerSessions.findOne({ projectId, status: "active" });
+  const session = await pokerSessions.findOne({ projectId: id, status: "active" });
   if (!session) return NextResponse.json({ error: "No active session" }, { status: 404 });
 
   const update: any = { updatedAt: new Date().toISOString() };

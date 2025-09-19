@@ -27,11 +27,12 @@ const REQUIRED_ORDER = ["todo","doing","testing","awaiting deploy","deployed","d
 
 export async function GET(
   req: Request,
-  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> } // UPDATED
 ) {
+  const { id } = await context.params; // UPDATED
   const { userId, error } = await requireUser();
   if (error) return error;
-  const { id: projectId } = await resolveParams((ctx as any).params);
+  const { id: projectId } = await resolveParams((context as any).params);
   const { projects, boards, stories, sprints } = await collections();
   const proj = await projects.findOne({ _id: projectId, memberIds: userId! });
   if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -106,11 +107,12 @@ export async function GET(
 
 export async function POST(
   req: Request,
-  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> } // UPDATED
 ) {
+  const { id } = await context.params; // UPDATED
   const { userId, error } = await requireUser();
   if (error) return error;
-  const { id: projectId } = await resolveParams((ctx as any).params);
+  const { id: projectId } = await resolveParams((context as any).params);
 
   const body = await req.json().catch(() => ({}));
   const titleRaw = String(body?.title || "").trim();

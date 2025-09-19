@@ -2,14 +2,10 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-auth";
 import { collections } from "@/lib/db";
 
-async function resolveParams(p: any): Promise<{ sessionId: string }> {
-  return typeof p?.then === "function" ? await p : p;
-}
-
-export async function POST(req: Request, ctx: { params: { sessionId: string } } | { params: Promise<{ sessionId: string }> }) {
+export async function POST(req: Request, context: { params: Promise<{ sessionId: string }> }) {
   const { userId, error } = await requireUser();
   if (error) return error;
-  const { sessionId } = await resolveParams((ctx as any).params);
+  const { sessionId } = await context.params;
   const body = await req.json().catch(() => ({}));
   const forced = body?.points != null ? Number(body.points) : null;
 

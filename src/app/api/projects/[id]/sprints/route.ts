@@ -8,11 +8,11 @@ async function resolveParams(p: any): Promise<{ id: string }> {
   return typeof p?.then === "function" ? await p : p;
 }
 
-export async function POST(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { userId, error } = await requireUser();
   if (error) return error;
 
-  const { id: projectId } = await resolveParams((ctx as any).params);
+  const { id: projectId } = await resolveParams(ctx.params);
 
   const body = await req.json().catch(() => ({}));
   const name = String(body?.name || "").trim();
@@ -42,11 +42,11 @@ export async function POST(req: Request, ctx: { params: { id: string } } | { par
   return NextResponse.json(sprint, { status: 201 });
 }
 
-export async function GET(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { userId, error } = await requireUser();
   if (error) return error;
 
-  const { id: projectId } = await resolveParams((ctx as any).params);
+  const { id: projectId } = await resolveParams(ctx.params);
   const { sprints, projects, stories } = await collections();
 
   const proj = await projects.findOne({ _id: projectId, memberIds: userId! });

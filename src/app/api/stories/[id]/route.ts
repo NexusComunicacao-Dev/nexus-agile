@@ -7,12 +7,12 @@ async function resolveParams(p: any): Promise<{ id: string }> {
 }
 
 export async function GET(
-  _req: Request,
-  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+  req: Request,
+  context: { params: Promise<{ id: string }> }
 ) {
   const { userId, error } = await requireUser();
   if (error) return error;
-  const { id } = await resolveParams((ctx as any).params);
+  const { id } = await context.params;
   const { stories, projects } = await collections();
   const story = await stories.findOne({ _id: id });
   if (!story) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -23,11 +23,11 @@ export async function GET(
 
 export async function PATCH(
   req: Request,
-  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> }
 ) {
   const { userId, error } = await requireUser();
   if (error) return error;
-  const { id } = await resolveParams((ctx as any).params);
+  const { id } = await context.params;
   const body = await req.json().catch(() => ({}));
 
   const { stories, projects } = await collections();
@@ -72,12 +72,12 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: Request,
-  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+  req: Request,
+  context: { params: Promise<{ id: string }> }
 ) {
   const { userId, error } = await requireUser();
   if (error) return error;
-  const { id } = await resolveParams((ctx as any).params);
+  const { id } = await context.params;
   const { stories, projects } = await collections();
   const story = await stories.findOne({ _id: id });
   if (!story) return NextResponse.json({ error: "Not found" }, { status: 404 });

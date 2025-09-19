@@ -2,17 +2,13 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-auth";
 import { collections } from "@/lib/db";
 
-async function resolveParams(p: any): Promise<{ id: string }> {
-  return typeof p?.then === "function" ? await p : p;
-}
-
 export async function POST(
   req: Request,
-  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> }
 ) {
   const { userId, error } = await requireUser();
   if (error) return error;
-  const { id } = await resolveParams((ctx as any).params);
+  const { id } = await context.params;
   const body = await req.json().catch(() => ({}));
   const text = String(body?.text || "").trim();
   if (!text) return NextResponse.json({ error: "text required" }, { status: 400 });
@@ -33,3 +29,13 @@ export async function POST(
   const updated = await stories.findOne({ _id: id });
   return NextResponse.json({ ok: true, comment, comments: updated?.comments || [] });
 }
+
+// export async function GET(req: Request, context: { params: Promise<{ id: string }> }) {
+//   const { id } = await context.params;
+//   // ...existing code...
+// }
+
+// export async function DELETE(req: Request, context: { params: Promise<{ id: string }> }) {
+//   const { id } = await context.params;
+//   // ...existing code...
+// }

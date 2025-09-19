@@ -11,11 +11,15 @@ async function resolveParams(p: any): Promise<{ id: string }> {
   return typeof p?.then === "function" ? await p : p;
 }
 
-export async function GET(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
+// GET projeto (assinatura ajustada)
+export async function GET(
+  req: Request,
+  context: { params: Promise<{ id: string }> } // UPDATED
+) {
+  const { id } = await context.params; // UPDATED
   const { userId, error } = await requireUser();
   if (error) return error;
 
-  const { id } = await resolveParams((ctx as any).params);
   const url = new URL(req.url);
   const includeMembers = url.searchParams.get("includeMembers") === "1";
 
@@ -54,11 +58,15 @@ export async function GET(req: Request, ctx: { params: { id: string } } | { para
   }
 }
 
-export async function PATCH(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
+// PATCH projeto (se existir)
+export async function PATCH(
+  req: Request,
+  context: { params: Promise<{ id: string }> } // UPDATED
+) {
+  const { id } = await context.params; // UPDATED
   const { userId, error } = await requireUser();
   if (error) return error;
 
-  const { id } = await resolveParams((ctx as any).params);
   const body = await req.json().catch(() => ({}));
   const { name } = body || {};
   const { projects } = await collections();
@@ -69,11 +77,14 @@ export async function PATCH(req: Request, ctx: { params: { id: string } } | { pa
   return NextResponse.json(updated);
 }
 
-export async function DELETE(_: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
+// DELETE projeto (se existir)
+export async function DELETE(
+  req: Request,
+  context: { params: Promise<{ id: string }> } // UPDATED
+) {
+  const { id } = await context.params; // UPDATED
   const { userId, error } = await requireUser();
   if (error) return error;
-
-  const { id } = await resolveParams((ctx as any).params);
 
   let isAdmin = false;
   try {

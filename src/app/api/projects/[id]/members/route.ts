@@ -6,16 +6,15 @@ import { sendMail } from "@/lib/mailer";
 import { buildEmailTemplate } from "@/lib/email-template";
 import { ObjectId } from "mongodb";
 
-// Helper para resolver params (compatível com Next que pode entregar Promise)
-async function resolveParams(p: any): Promise<{ id: string }> {
-  return typeof p?.then === "function" ? await p : p; // FIX: agora aguarda
-}
-
-export async function POST(req: Request, ctx: { params: { id: string } } | { params: Promise<{ id: string }> }) {
+// POST convidar / adicionar membro
+export async function POST(
+  req: Request,
+  context: { params: Promise<{ id: string }> } // UPDATED
+) {
   const { userId, error } = await requireUser();
   if (error) return error;
 
-  const { id } = await resolveParams((ctx as any).params);
+  const { id } = await context.params; // UPDATED
 
   const body = await req.json().catch(() => ({}));
   const email = String(body?.email || "").trim().toLowerCase();
@@ -106,20 +105,21 @@ export async function POST(req: Request, ctx: { params: { id: string } } | { par
   return NextResponse.json(updated);
 }
 
+// DELETE remover membro
 export async function DELETE(
   req: Request,
-  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> } // UPDATED
 ) {
   const { userId, error } = await requireUser();
   if (error) return error;
 
-  const { id } = await resolveParams((ctx as any).params);
+  const { id } = await context.params; // UPDATED
 
   const { searchParams } = new URL(req.url);
   const memberId = String(searchParams.get("memberId") || "");
   if (!memberId) return NextResponse.json({ error: "memberId is required" }, { status: 400 });
 
-  const { projects, db } = await collections(); // UPDATED para ter db
+  const { projects, db } = await collections();
   const proj = await projects.findOne({ _id: id, ownerId: userId! });
   if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -150,13 +150,15 @@ export async function DELETE(
   });
 }
 
+// GET listar membros
 export async function GET(
   _req: Request,
-  ctx: { params: { id: string } } | { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> } // UPDATED
 ) {
   const { userId, error } = await requireUser();
   if (error) return error;
-  const { id: projectId } = await resolveParams((ctx as any).params);
+
+  const { id: projectId } = await context.params; // UPDATED
   const { projects, db } = await collections();
   const proj = await projects.findOne({ _id: projectId, memberIds: userId! });
   if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
