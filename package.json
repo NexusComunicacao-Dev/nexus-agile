@@ -1,5 +1,8 @@
 {
   "name": "work-manager",
+  "author": {
+    "name": "Fabrício Bahiense"
+  },
   "version": "0.1.0",
   "private": true,
   "scripts": {
