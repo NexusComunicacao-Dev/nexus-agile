@@ -114,13 +114,32 @@ export async function GET(
         const sortedHistory = s.history.slice().sort((a: any, b: any) =>
           new Date(a.at).getTime() - new Date(b.at).getTime()
         );
-        const workStartEvent = sortedHistory.find((h: any) => h.status && workStartStatuses.includes(h.status));
-        if (workStartEvent) {
-          workStartedAt = workStartEvent.at;
+
+        // Verifica se existe evento de "todo" no histórico
+        const todoEvent = sortedHistory.find((h: any) => h.status === "todo");
+
+        if (todoEvent) {
+          // Se tem evento de "todo", procura o primeiro evento de work DEPOIS dele
+          const todoTime = new Date(todoEvent.at).getTime();
+          const workStartEvent = sortedHistory.find((h: any) =>
+            h.status &&
+            workStartStatuses.includes(h.status) &&
+            new Date(h.at).getTime() > todoTime
+          );
+          if (workStartEvent) {
+            workStartedAt = workStartEvent.at;
+          }
+        } else {
+          // Se não tem evento de "todo", pega o primeiro evento de work que existir
+          // (histórias antigas que já estavam em work quando o tracking começou)
+          const workStartEvent = sortedHistory.find((h: any) => h.status && workStartStatuses.includes(h.status));
+          if (workStartEvent) {
+            workStartedAt = workStartEvent.at;
+          }
         }
       }
 
-      // Fallback: se a história já está em work mas não tem evento no histórico
+      // Fallback final: se a história já está em work mas não conseguiu determinar workStartedAt
       if (!workStartedAt && workStartStatuses.includes(currentStatus)) {
         // Primeiro tenta usar a data de adição à sprint
         if (Array.isArray(s.history) && s.history.length > 0) {
@@ -146,10 +165,6 @@ export async function GET(
         if (lastStatusChange) {
           timeInCurrentStatus = lastStatusChange.at;
         }
-      }
-      // Fallback: se não tiver histórico do status atual, usa workStartedAt ou createdAt
-      if (!timeInCurrentStatus) {
-        timeInCurrentStatus = workStartedAt || createdAt;
       }
 
       return {

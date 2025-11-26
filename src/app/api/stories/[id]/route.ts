@@ -45,6 +45,11 @@ export async function PATCH(
   if (body.status && allowedStatuses.includes(body.status)) {
     // Adiciona ao histórico se o status mudou
     if (story.status !== body.status) {
+      // Se não há histórico e a história está saindo de "todo", adiciona evento retroativo
+      if ((!story.history || story.history.length === 0) && story.status === "todo") {
+        const retroactiveDate = story.createdAt || now;
+        historyPush.push({ status: "todo", at: retroactiveDate });
+      }
       historyPush.push({ status: body.status, at: now });
     }
     update.status = body.status;
