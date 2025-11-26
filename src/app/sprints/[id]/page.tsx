@@ -126,16 +126,16 @@ export default function SprintDetailPage() {
       </header>
 
       {/* Métricas agregadas */}
-      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-7">
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         <Metric label="Histórias" value={m.totalStories} />
-        <Metric label="Concluídas" value={m.doneStories} />
-        <Metric label="Progresso" value={`${m.progressPct || 0}%`} />
+        <Metric label="Concluídas" value={m.doneStories} highlight={m.doneStories === m.totalStories} />
+        <Metric label="Progresso" value={`${m.progressPct || 0}%`} highlight={m.progressPct === 100} />
         <Metric label="Pontos (total)" value={m.totalPoints} />
         <Metric label="Pontos concluídos" value={m.completedPoints} />
-        <Metric label="Lead (médio)" value={`${m.avgLeadDays ?? 0}d`} />
+        <Metric label="Lead médio" value={`${m.avgLeadDays ?? 0}d`} highlight={m.avgLeadDays <= m.leadTargetDays} />
         <Metric label="Lead alvo" value={`${m.leadTargetDays}d`} />
         <Metric label="Dentro do alvo" value={`${m.leadWithinTarget}/${m.totalStories}`} />
-        <Metric label="% Dentro alvo" value={`${m.leadWithinTargetPct || 0}%`} />
+        <Metric label="% No alvo" value={`${m.leadWithinTargetPct || 0}%`} highlight={m.leadWithinTargetPct >= 80} />
       </div>
 
       {/* Detalhes por história (tabela de lead time) */}
@@ -163,9 +163,15 @@ export default function SprintDetailPage() {
             <tbody>
               {data.stories.map((s:any) => {
                 const lead = s.lead;
+                const isDone = lead?.isDone || s.status === "done";
                 return (
-                  <tr key={s.id} className="border-t border-foreground/10 hover:bg-foreground/5">
-                    <td className="px-3 py-2 font-medium max-w-[220px] truncate">{s.title}</td>
+                  <tr key={s.id} className={`border-t border-foreground/10 hover:bg-foreground/5 ${isDone ? "bg-green-500/5" : ""}`}>
+                    <td className="px-3 py-2 font-medium max-w-[220px] truncate">
+                      <div className="flex items-center gap-2">
+                        {isDone && <span className="text-green-600 text-xs">✓</span>}
+                        <span>{s.title}</span>
+                      </div>
+                    </td>
                     <td className="px-3 py-2">
                       {s.assigneeId ? (
                         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-foreground/10 text-[10px] font-semibold">
@@ -173,15 +179,37 @@ export default function SprintDetailPage() {
                         </span>
                       ) : "—"}
                     </td>
-                    <td className="px-3 py-2">{s.status}</td>
+                    <td className="px-3 py-2">
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        s.status === "done" ? "bg-green-500/15 text-green-700 border border-green-500/30" : "bg-foreground/10 text-foreground/70"
+                      }`}>
+                        {s.status}
+                      </span>
+                    </td>
                     <td className="px-3 py-2">{typeof s.points === "number" ? s.points : "—"}</td>
-                    <td className="px-3 py-2">{lead ? fmtDays(lead.total.days) : "—"}</td>
-                    <td className={`px-3 py-2 ${lead ? (lead.varianceDays > 0 ? "text-red-600" : "text-green-600") : ""}`}>
+                    <td className="px-3 py-2 font-semibold">
+                      {lead ? (
+                        <span className={lead.withinTarget ? "text-green-600" : "text-foreground"}>
+                          {fmtDays(lead.total.days)}
+                        </span>
+                      ) : "—"}
+                    </td>
+                    <td className={`px-3 py-2 font-semibold ${lead ? (lead.varianceDays > 0 ? "text-red-600" : "text-green-600") : ""}`}>
                       {lead ? (lead.varianceDays > 0 ? `+${lead.varianceDays}d` : `${lead.varianceDays}d`) : "—"}
                     </td>
-                    <td className="px-3 py-2">{lead ? (lead.withinTarget ? "Sim" : "Não") : "—"}</td>
+                    <td className="px-3 py-2">
+                      {lead ? (
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                          lead.withinTarget
+                            ? "bg-green-500/15 text-green-700"
+                            : "bg-red-500/15 text-red-700"
+                        }`}>
+                          {lead.withinTarget ? "Sim" : "Não"}
+                        </span>
+                      ) : "—"}
+                    </td>
                     {["todo","doing","testing","awaiting deploy","deployed","done"].map(st => (
-                      <td key={st} className="px-3 py-2">
+                      <td key={st} className="px-3 py-2 text-foreground/70">
                         {lead ? fmtDays(lead.perStatus[st]?.days) : "—"}
                       </td>
                     ))}
@@ -211,33 +239,58 @@ export default function SprintDetailPage() {
             <ul className="grid gap-2">
               {grouped[status].map((s: any) => {
                 const lead = s.lead;
+                const isDone = lead?.isDone || s.status === "done";
                 return (
                   <li
                     key={s.id}
-                    className="rounded-md border border-foreground/10 bg-background p-3 text-xs flex items-center justify-between gap-3"
+                    className={`rounded-md border p-3 text-xs flex items-center justify-between gap-3 ${
+                      isDone
+                        ? "border-green-500/30 bg-green-500/5"
+                        : "border-foreground/10 bg-background"
+                    }`}
                   >
                     <div className="min-w-0">
                       <div className="font-medium truncate flex items-center gap-2">
+                        {isDone && <span className="text-green-600 text-xs flex-shrink-0">✓</span>}
                         <span className="truncate">{s.title}</span>
                         {typeof s.points === "number" && (
-                          <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] text-foreground/70">
+                          <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] text-foreground/70 flex-shrink-0">
                             {s.points} pts
                           </span>
                         )}
                       </div>
-                      <div className="text-[10px] text-foreground/50">
-                        {s.status}
-                        {lead && ` • ${lead.total.days}d`}
+                      <div className="text-[10px] text-foreground/50 flex items-center gap-2 mt-1">
+                        <span className={`rounded-full px-2 py-0.5 ${
+                          s.status === "done" ? "bg-green-500/15 text-green-700" : "bg-foreground/10"
+                        }`}>
+                          {s.status}
+                        </span>
+                        {lead && (
+                          <>
+                            <span className={lead.withinTarget ? "text-green-600 font-medium" : ""}>
+                              {lead.total.days}d
+                            </span>
+                            {!lead.withinTarget && (
+                              <span className="text-red-600 font-medium">
+                                ({lead.varianceDays > 0 ? `+${lead.varianceDays}d` : `${lead.varianceDays}d`})
+                              </span>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       {lead && (
-                        <span className={`text-[10px] font-medium ${lead.varianceDays > 0 ? "text-red-600" : "text-green-600"}`}>
-                          {lead.varianceDays > 0 ? `+${lead.varianceDays}d` : `${lead.varianceDays}d`}
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium border ${
+                          lead.withinTarget
+                            ? "bg-green-500/10 text-green-700 border-green-500/30"
+                            : "bg-red-500/10 text-red-700 border-red-500/30"
+                        }`}>
+                          {lead.withinTarget ? "No alvo" : "Fora"}
                         </span>
                       )}
                       {s.assigneeId && (
-                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-foreground/10 text-[10px] font-semibold">
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-foreground/10 text-[10px] font-semibold flex-shrink-0">
                           {initials(s.assigneeId)}
                         </span>
                       )}
@@ -256,31 +309,49 @@ export default function SprintDetailPage() {
         <ul className="grid gap-2">
           {data.stories.map((s: any) => {
             const lead = s.lead;
+            const isDone = lead?.isDone || s.status === "done";
             return (
               <li
                 key={s.id}
-                className="rounded-md border border-foreground/10 bg-background p-3 text-xs flex items-center justify-between gap-3"
+                className={`rounded-md border p-3 text-xs flex items-center justify-between gap-3 ${
+                  isDone
+                    ? "border-green-500/30 bg-green-500/5"
+                    : "border-foreground/10 bg-background"
+                }`}
               >
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="font-medium truncate flex items-center gap-2">
+                    {isDone && <span className="text-green-600 text-xs flex-shrink-0">✓</span>}
                     <span className="truncate">{s.title}</span>
                     {typeof s.points === "number" && (
-                      <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] text-foreground/70">
+                      <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] text-foreground/70 flex-shrink-0">
                         {s.points} pts
                       </span>
                     )}
                   </div>
-                  <div className="text-[10px] text-foreground/50">
-                    {s.status}
-                    {lead && ` • ${lead.total.days}d (${lead.withinTarget ? "OK" : "OUT"})`}
+                  <div className="text-[10px] text-foreground/50 flex items-center gap-2 mt-1 flex-wrap">
+                    <span className={`rounded-full px-2 py-0.5 ${
+                      s.status === "done" ? "bg-green-500/15 text-green-700" : "bg-foreground/10"
+                    }`}>
+                      {s.status}
+                    </span>
+                    {lead && (
+                      <>
+                        <span className={lead.withinTarget ? "text-green-600 font-medium" : ""}>
+                          Lead: {lead.total.days}d
+                        </span>
+                        <span className={`rounded-full px-2 py-0.5 font-medium ${
+                          lead.withinTarget
+                            ? "bg-green-500/10 text-green-700"
+                            : "bg-red-500/10 text-red-700"
+                        }`}>
+                          {lead.withinTarget ? "No alvo" : `Fora (${lead.varianceDays > 0 ? `+${lead.varianceDays}d` : `${lead.varianceDays}d`})`}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {lead && (
-                    <span className={`text-[10px] font-medium ${lead.varianceDays > 0 ? "text-red-600" : "text-green-600"}`}>
-                      {lead.varianceDays > 0 ? `+${lead.varianceDays}d` : `${lead.varianceDays}d`}
-                    </span>
-                  )}
+                <div className="flex items-center gap-2 flex-shrink-0">
                   {s.assigneeId && (
                     <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-foreground/10 text-[10px] font-semibold">
                       {initials(s.assigneeId)}
@@ -301,11 +372,15 @@ export default function SprintDetailPage() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: any }) {
+function Metric({ label, value, highlight }: { label: string; value: any; highlight?: boolean }) {
   return (
-    <div className="rounded-lg border border-foreground/10 bg-background p-4 flex flex-col gap-1">
+    <div className={`rounded-lg border p-4 flex flex-col gap-1 transition-colors ${
+      highlight
+        ? "border-green-500/30 bg-green-500/10"
+        : "border-foreground/10 bg-background"
+    }`}>
       <span className="text-[10px] uppercase tracking-wide text-foreground/50">{label}</span>
-      <span className="text-sm font-semibold">{value ?? "—"}</span>
+      <span className={`text-sm font-semibold ${highlight ? "text-green-700" : ""}`}>{value ?? "—"}</span>
     </div>
   );
 }

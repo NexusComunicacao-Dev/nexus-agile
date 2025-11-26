@@ -38,8 +38,15 @@ export async function PATCH(
   if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const update: any = {};
+  const historyPush: any[] = [];
+  const now = new Date().toISOString();
   const allowedStatuses = ["todo","doing","testing","awaiting deploy","deployed","done"];
+
   if (body.status && allowedStatuses.includes(body.status)) {
+    // Adiciona ao histórico se o status mudou
+    if (story.status !== body.status) {
+      historyPush.push({ status: body.status, at: now });
+    }
     update.status = body.status;
   }
   if (body.points != null) {
@@ -50,8 +57,21 @@ export async function PATCH(
     update.description = body.description.trim() || undefined;
   }
   if (body.sprintId === null) {
+    // Remove da sprint - adiciona evento especial ao histórico
+    if (story.sprintId !== null) {
+      historyPush.push({ event: "removed-from-sprint", at: now });
+    }
     update.sprintId = null;
   } else if (typeof body.sprintId === "string" && body.sprintId.trim()) {
+    // Adiciona à sprint - adiciona evento especial ao histórico
+    if (story.sprintId !== body.sprintId.trim()) {
+      historyPush.push({
+        event: "added-to-sprint",
+        sprintId: body.sprintId.trim(),
+        status: story.status || "todo",
+        at: now
+      });
+    }
     update.sprintId = body.sprintId.trim();
   }
   if ("assigneeId" in body) {
@@ -66,7 +86,13 @@ export async function PATCH(
     return NextResponse.json({ error: "No valid fields" }, { status: 400 });
   }
 
-  await stories.updateOne({ _id: id }, { $set: update });
+  // Atualiza o documento com $set e $push para histórico
+  const updateOps: any = { $set: update };
+  if (historyPush.length > 0) {
+    updateOps.$push = { history: { $each: historyPush } };
+  }
+
+  await stories.updateOne({ _id: id }, updateOps);
   const next = await stories.findOne({ _id: id });
   return NextResponse.json(next);
 }

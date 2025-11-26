@@ -17,20 +17,42 @@ function msToDays(ms: number) {
 }
 
 // NEW cálculo de métricas por história
-function computeStoryLeadMetrics(story: any) {
-  const history: { status: string; at: string }[] = Array.isArray(story.history) ? story.history.slice() : [];
+function computeStoryLeadMetrics(story: any, sprintId: string) {
+  const history: any[] = Array.isArray(story.history) ? story.history.slice() : [];
   history.sort((a,b)=>new Date(a.at).getTime()-new Date(b.at).getTime());
   if (!history.length) return null;
+
+  // Encontra quando a história foi adicionada à sprint
+  const sprintJoinEvent = history.find(h => h.event === "added-to-sprint" && h.sprintId === sprintId);
+
+  // Se não houver evento de entrada na sprint, usa o primeiro evento (histórias antigas)
+  const startEvent = sprintJoinEvent || history[0];
+  const startTs = new Date(startEvent.at).getTime();
+
+  // Filtra eventos que aconteceram após entrada na sprint
+  const relevantHistory = history.filter(h => new Date(h.at).getTime() >= startTs);
 
   const perStatus: Record<string, { ms: number; days: number }> = {};
   const orderStatuses = ["todo","doing","testing","awaiting deploy","deployed","done"];
   const now = Date.now();
+  const doneEvent = relevantHistory.find(h => h.status === "done");
 
-  for (let i=0; i<history.length; i++) {
-    const cur = history[i];
+  // Se a história está done, para de contar no momento do done
+  const countUntil = doneEvent ? new Date(doneEvent.at).getTime() : now;
+
+  for (let i=0; i<relevantHistory.length; i++) {
+    const cur = relevantHistory[i];
+    // Pula eventos que não têm status (como "added-to-sprint", "removed-from-sprint")
+    if (!cur.status) continue;
+
     const start = new Date(cur.at).getTime();
-    const end = i < history.length - 1 ? new Date(history[i+1].at).getTime() : now;
-    const span = Math.max(0, end - start);
+    const nextEvent = relevantHistory[i+1];
+    const end = nextEvent ? new Date(nextEvent.at).getTime() : countUntil;
+
+    // Não conta tempo além do "done" ou "now"
+    const effectiveEnd = Math.min(end, countUntil);
+    const span = Math.max(0, effectiveEnd - start);
+
     if (!perStatus[cur.status]) perStatus[cur.status] = { ms: 0, days: 0 };
     perStatus[cur.status].ms += span;
   }
@@ -41,12 +63,13 @@ function computeStoryLeadMetrics(story: any) {
     perStatus[st].days = msToDays(perStatus[st].ms);
   }
 
-  // Total: se história chegou em 'done', usar tempo entre primeiro evento e mudança para done; senão até agora
-  const firstTs = new Date(history[0].at).getTime();
-  const doneEvent = history.find(h => h.status === "done");
+  // Total: tempo entre entrada na sprint e done (ou agora, se não finalizada)
   const endTs = doneEvent ? new Date(doneEvent.at).getTime() : now;
-  const totalMs = Math.max(0, endTs - firstTs);
+  const totalMs = Math.max(0, endTs - startTs);
   const totalDays = msToDays(totalMs);
+
+  // Variance: positiva se excedeu o alvo, negativa se dentro do alvo
+  // Só conta até o done (se existir)
   const varianceDays = +(totalDays - LEAD_TARGET_DAYS).toFixed(2);
 
   return {
@@ -54,7 +77,8 @@ function computeStoryLeadMetrics(story: any) {
     total: { ms: totalMs, days: totalDays },
     targetDays: LEAD_TARGET_DAYS,
     varianceDays,
-    withinTarget: totalDays <= LEAD_TARGET_DAYS
+    withinTarget: totalDays <= LEAD_TARGET_DAYS,
+    isDone: !!doneEvent // Indica se a história foi finalizada
   };
 }
 
@@ -87,7 +111,7 @@ export async function GET(
 
   // NEW: métricas de lead time por história
   const storyMetrics = sprintStories.map((s: { _id: string; history?: any[] }) => {
-    const lead = computeStoryLeadMetrics(s);
+    const lead = computeStoryLeadMetrics(s, sprint._id);
     return {
       id: s._id,
       lead
