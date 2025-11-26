@@ -88,20 +88,81 @@ export async function GET(
   if (activeSprint) {
     sprintStories = await stories
       .find({ projectId, sprintId: activeSprint._id })
-      .project({ _id: 1, title: 1, status: 1, points: 1, assigneeId: 1 }) // ADDED assigneeId
+      .project({ _id: 1, title: 1, status: 1, points: 1, assigneeId: 1, createdAt: 1, history: 1 })
       .toArray();
   }
 
   return NextResponse.json({
     ...doc,
     activeSprint: activeSprint ? { id: activeSprint._id, name: activeSprint.name } : null,
-    sprintStories: sprintStories.map(s => ({
-      id: s._id,
-      title: s.title,
-      status: (s.status || "todo").toLowerCase(),
-      points: s.points,
-      assigneeId: s.assigneeId || null, // ADDED
-    })),
+    sprintStories: sprintStories.map(s => {
+      // Fallback: se não tiver createdAt, usa o primeiro evento do history
+      let createdAt = s.createdAt;
+      if (!createdAt && Array.isArray(s.history) && s.history.length > 0) {
+        const firstEvent = s.history.sort((a: any, b: any) =>
+          new Date(a.at).getTime() - new Date(b.at).getTime()
+        )[0];
+        createdAt = firstEvent.at;
+      }
+
+      // Encontra quando a história saiu de "todo" (começou o trabalho)
+      let workStartedAt = null;
+      const workStartStatuses = ["doing", "testing", "awaiting deploy", "deployed", "done"];
+      const currentStatus = (s.status || "todo").toLowerCase();
+
+      if (Array.isArray(s.history) && s.history.length > 0) {
+        const sortedHistory = s.history.slice().sort((a: any, b: any) =>
+          new Date(a.at).getTime() - new Date(b.at).getTime()
+        );
+        const workStartEvent = sortedHistory.find((h: any) => h.status && workStartStatuses.includes(h.status));
+        if (workStartEvent) {
+          workStartedAt = workStartEvent.at;
+        }
+      }
+
+      // Fallback: se a história já está em work mas não tem evento no histórico
+      if (!workStartedAt && workStartStatuses.includes(currentStatus)) {
+        // Primeiro tenta usar a data de adição à sprint
+        if (Array.isArray(s.history) && s.history.length > 0) {
+          const addedToSprintEvent = s.history.find((h: any) => h.event === "added-to-sprint");
+          if (addedToSprintEvent) {
+            workStartedAt = addedToSprintEvent.at;
+          }
+        }
+        // Se não tiver evento de sprint, usa createdAt como último recurso
+        if (!workStartedAt && createdAt) {
+          workStartedAt = createdAt;
+        }
+      }
+
+      // Calcula há quanto tempo está no status atual
+      let timeInCurrentStatus = null;
+      if (Array.isArray(s.history) && s.history.length > 0) {
+        const sortedHistory = s.history.slice().sort((a: any, b: any) =>
+          new Date(a.at).getTime() - new Date(b.at).getTime()
+        );
+        // Encontra o último evento que mudou o status para o atual
+        const lastStatusChange = sortedHistory.reverse().find((h: any) => h.status === currentStatus);
+        if (lastStatusChange) {
+          timeInCurrentStatus = lastStatusChange.at;
+        }
+      }
+      // Fallback: se não tiver histórico do status atual, usa workStartedAt ou createdAt
+      if (!timeInCurrentStatus) {
+        timeInCurrentStatus = workStartedAt || createdAt;
+      }
+
+      return {
+        id: s._id,
+        title: s.title,
+        status: (s.status || "todo").toLowerCase(),
+        points: s.points,
+        assigneeId: s.assigneeId || null,
+        createdAt,
+        workStartedAt,
+        timeInCurrentStatus,
+      };
+    }),
   });
 }
 

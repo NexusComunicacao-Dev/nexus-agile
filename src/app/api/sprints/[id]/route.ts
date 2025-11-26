@@ -22,12 +22,14 @@ function computeStoryLeadMetrics(story: any, sprintId: string) {
   history.sort((a,b)=>new Date(a.at).getTime()-new Date(b.at).getTime());
   if (!history.length) return null;
 
-  // Encontra quando a história foi adicionada à sprint
-  const sprintJoinEvent = history.find(h => h.event === "added-to-sprint" && h.sprintId === sprintId);
+  // Encontra quando a história saiu de "todo" (foi para "doing" ou além)
+  const workStartStatuses = ["doing", "testing", "awaiting deploy", "deployed", "done"];
+  const workStartEvent = history.find(h => h.status && workStartStatuses.includes(h.status));
 
-  // Se não houver evento de entrada na sprint, usa o primeiro evento (histórias antigas)
-  const startEvent = sprintJoinEvent || history[0];
-  const startTs = new Date(startEvent.at).getTime();
+  // Se nunca saiu de "todo", não tem lead time
+  if (!workStartEvent) return null;
+
+  const startTs = new Date(workStartEvent.at).getTime();
 
   // Filtra eventos que aconteceram após entrada na sprint
   const relevantHistory = history.filter(h => new Date(h.at).getTime() >= startTs);

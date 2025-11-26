@@ -152,7 +152,11 @@ export default function BoardPage() {
               id: s.id,
               title: s.title,
               points: s.points,
-              assigneeId: s.assigneeId || null, // NEW
+              assigneeId: s.assigneeId || null,
+              status: s.status,
+              createdAt: s.createdAt,
+              workStartedAt: s.workStartedAt,
+              timeInCurrentStatus: s.timeInCurrentStatus,
               __sprint: true,
             })),
           ],
@@ -376,10 +380,10 @@ export default function BoardPage() {
                       onDragStart={(e) => handleDragStart(e, it.id)}
                       onDragEnd={handleDragEnd}
                       onClick={() => openStory(it.id, Boolean(it.__sprint))}
-                      className={`rounded-lg border px-3 py-2.5 text-xs bg-background break-words cursor-pointer select-none transition-all ${
+                      className={`group rounded-xl border px-3.5 py-3 text-xs bg-background break-words cursor-pointer select-none transition-all shadow-sm ${
                         it.__sprint
-                          ? "border-indigo-400/50 bg-indigo-400/5 hover:bg-indigo-400/10 hover:border-indigo-400/70 hover:shadow-md"
-                          : "border-foreground/15 hover:border-foreground/30 hover:shadow-sm"
+                          ? "border-foreground/20 hover:border-[var(--brand-primary)]/40 hover:shadow-md hover:bg-gradient-to-br hover:from-background hover:to-foreground/[0.02]"
+                          : "border-foreground/10 hover:border-foreground/25 hover:shadow-sm"
                       } ${dragging ? "opacity-40 scale-95" : ""}`}
                       title={
                         it.__sprint
@@ -387,28 +391,53 @@ export default function BoardPage() {
                           : "Item estático do board"
                       }
                     >
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="font-medium leading-relaxed break-words flex-1">{it.title}</span>
+                      <div className="flex flex-col gap-2.5">
+                        <div className="flex items-start gap-2">
+                          <span className="font-medium leading-relaxed break-words flex-1 text-foreground/90 group-hover:text-foreground transition-colors">
+                            {it.title}
+                          </span>
                           {it.__sprint && it.assigneeId && (
-                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-500/15 text-[9px] font-semibold text-indigo-700 flex-shrink-0 border border-indigo-400/20">
+                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-foreground/10 to-foreground/15 text-[9px] font-bold text-foreground/80 flex-shrink-0 border border-foreground/15 shadow-sm">
                               {members.find(m=>m.id===it.assigneeId)?.initials || "?"}
                             </span>
                           )}
                         </div>
-                        {typeof it.points === "number" && (
-                          <div className="flex justify-end">
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                                it.__sprint
-                                  ? "bg-indigo-500/15 text-indigo-700 border border-indigo-400/30"
-                                  : "bg-foreground/10 text-foreground/60 border border-foreground/10"
-                              }`}
-                            >
-                              {it.points} pts
-                            </span>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {typeof it.points === "number" && (
+                              <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold bg-foreground/8 text-foreground/70 border border-foreground/10">
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                </svg>
+                                {it.points}
+                              </span>
+                            )}
+                            {it.__sprint && it.workStartedAt && (() => {
+                              const days = Math.floor((Date.now() - new Date(it.workStartedAt).getTime()) / (1000 * 60 * 60 * 24));
+                              const isOverdue = days > 7;
+                              return (
+                                <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[9px] font-medium border ${
+                                  isOverdue
+                                    ? "bg-orange-500/10 text-orange-700 border-orange-500/30"
+                                    : "bg-green-500/10 text-green-700 border-green-500/30"
+                                }`} title="Lead time total">
+                                  <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  {days}d
+                                </span>
+                              );
+                            })()}
                           </div>
-                        )}
+                          {it.__sprint && it.timeInCurrentStatus && (() => {
+                            const daysInStatus = Math.floor((Date.now() - new Date(it.timeInCurrentStatus).getTime()) / (1000 * 60 * 60 * 24));
+                            return (
+                              <span className="text-[9px] text-foreground/40" title={`Tempo no status atual (${it.status})`}>
+                                {daysInStatus}d aqui
+                              </span>
+                            );
+                          })()}
+                        </div>
                       </div>
                     </li>
                   );
