@@ -306,7 +306,7 @@ export default function BoardPage() {
   }
 
   return (
-    <section className="grid gap-6 mx-auto max-w-[80vw]"> {/* largura principal da página */}
+    <section className="grid gap-6 mx-auto w-full px-6 py-6 rounded-2xl  shadow-sm">
       {/* TOASTS */}
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
         {notices.map(n => (
@@ -347,82 +347,80 @@ export default function BoardPage() {
 
       {loading && <div className="text-xs text-foreground/60">Carregando...</div>}
 
-      {/* NOVO WRAPPER CENTRALIZADO + GRID */}
-      <div className="w-full overflow-auto">
-        <div className="mx-auto">
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            {mergedColumns.map((col: any) => (
-              <div
-                key={col.id || col.title}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, (col.id || col.title || "").toString())}
-                className="rounded-lg border border-border bg-background/90 backdrop-blur-sm p-3 flex flex-col gap-3 min-h-[340px] shadow-sm hover:shadow-brand transition"
-              >
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full mr-2 bg-[var(--brand-primary)]/70" />
-                    {col.title || col.id}
-                  </h2>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--brand-primary)]/10 text-[var(--brand-primary)] font-medium">
-                    {(col.items || []).length}
-                  </span>
-                </div>
-                <ul className="flex flex-col gap-2">
-                  {(col.items || []).map((it: any) => {
-                    const dragging = draggingId === it.id;
-                    return (
-                      <li
-                        key={it.id}
-                        draggable={Boolean(it.__sprint)}
-                        onDragStart={(e) => handleDragStart(e, it.id)}
-                        onDragEnd={handleDragEnd}
-                        onClick={() => openStory(it.id, Boolean(it.__sprint))}
-                        className={`rounded-md border px-2 py-2 text-xs bg-background break-words cursor-pointer select-none transition ${
-                          it.__sprint
-                            ? "border-indigo-400/50 bg-indigo-400/5 hover:bg-indigo-400/10"
-                            : "border-foreground/15 hover:border-foreground/30"
-                        } ${dragging ? "opacity-40" : ""}`}
-                        title={
-                          it.__sprint
-                            ? "História da sprint ativa (clique para detalhes / arraste para mudar status)"
-                            : "Item estático do board"
-                        }
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-medium truncate">{it.title}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {typeof it.points === "number" && (
-                              <span
-                                className={`rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] ${
-                                  it.__sprint
-                                    ? "bg-indigo-500/10 text-indigo-600"
-                                    : "text-foreground/60"
-                                }`}
-                              >
-                                {it.points} pts
-                              </span>
-                            )}
-                            {it.__sprint && it.assigneeId && (
-                              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-foreground/10 text-[9px] font-semibold">
-                                {members.find(m=>m.id===it.assigneeId)?.initials || "?"}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                  {(!col.items || !col.items.length) && (
-                    <li className="text-[11px] text-foreground/40 italic">
-                      Vazio
-                    </li>
-                  )}
-                </ul>
+      {/* Board Grid - Responsivo com scroll horizontal se necessário */}
+      <div className="w-full overflow-x-auto pb-2 -mx-2 px-2">
+        <div className="flex gap-6 min-w-max">
+          {mergedColumns.map((col: any) => (
+            <div
+              key={col.id || col.title}
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, (col.id || col.title || "").toString())}
+              className="rounded-xl border border-border bg-background shadow-lg hover:shadow-xl transition-shadow flex flex-col w-[280px] h-[calc(100vh-280px)] max-h-[700px]"
+            >
+              <div className="flex items-center justify-between p-4 pb-3 border-b border-border/50">
+                <h2 className="text-sm font-semibold flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[var(--brand-primary)]/70 shadow-sm" />
+                  {col.title || col.id}
+                </h2>
+                <span className="text-[10px] px-2.5 py-1 rounded-full bg-[var(--brand-primary)]/15 text-[var(--brand-primary)] font-semibold border border-[var(--brand-primary)]/20">
+                  {(col.items || []).length}
+                </span>
               </div>
-            ))}
-          </div>
+              <ul className="flex flex-col gap-2.5 p-3 overflow-y-auto flex-1">
+                {(col.items || []).map((it: any) => {
+                  const dragging = draggingId === it.id;
+                  return (
+                    <li
+                      key={it.id}
+                      draggable={Boolean(it.__sprint)}
+                      onDragStart={(e) => handleDragStart(e, it.id)}
+                      onDragEnd={handleDragEnd}
+                      onClick={() => openStory(it.id, Boolean(it.__sprint))}
+                      className={`rounded-lg border px-3 py-2.5 text-xs bg-background break-words cursor-pointer select-none transition-all ${
+                        it.__sprint
+                          ? "border-indigo-400/50 bg-indigo-400/5 hover:bg-indigo-400/10 hover:border-indigo-400/70 hover:shadow-md"
+                          : "border-foreground/15 hover:border-foreground/30 hover:shadow-sm"
+                      } ${dragging ? "opacity-40 scale-95" : ""}`}
+                      title={
+                        it.__sprint
+                          ? "História da sprint ativa (clique para detalhes / arraste para mudar status)"
+                          : "Item estático do board"
+                      }
+                    >
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-medium leading-relaxed break-words flex-1">{it.title}</span>
+                          {it.__sprint && it.assigneeId && (
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-500/15 text-[9px] font-semibold text-indigo-700 flex-shrink-0 border border-indigo-400/20">
+                              {members.find(m=>m.id===it.assigneeId)?.initials || "?"}
+                            </span>
+                          )}
+                        </div>
+                        {typeof it.points === "number" && (
+                          <div className="flex justify-end">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                it.__sprint
+                                  ? "bg-indigo-500/15 text-indigo-700 border border-indigo-400/30"
+                                  : "bg-foreground/10 text-foreground/60 border border-foreground/10"
+                              }`}
+                            >
+                              {it.points} pts
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+                {(!col.items || !col.items.length) && (
+                  <li className="text-[11px] text-foreground/40 italic text-center py-12">
+                    Vazio
+                  </li>
+                )}
+              </ul>
+            </div>
+          ))}
         </div>
       </div>
 

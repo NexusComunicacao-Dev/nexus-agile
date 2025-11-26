@@ -214,7 +214,7 @@ export default function RootLayout({
               <NavClient />
             </nav>
           </header>
-          <main className="mx-auto max-w-[80vw] p-6">
+          <main className="mt-10 mx-auto max-w-[96vw] p-6 bg-gradient-to-br from-foreground/[0.02] to-foreground/[0.04] rounded-2xl shadow-sm mb-20">
             {children}
           </main>
         </Providers>
